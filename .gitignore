@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.DS_Store
+/*.png
+npm-debug.log*
+.data/
+.env
+.wrangler/

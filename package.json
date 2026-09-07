@@ -1,0 +1,42 @@
+{
+  "name": "dazzjun-workspace",
+  "version": "7.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "node backend/server.mjs",
+    "build": "npm run build:worker-ai && vite build && node scripts/prepare-sites-build.mjs",
+    "build:worker-ai": "tsc -p worker/tsconfig.runtime.json",
+    "typecheck": "tsc --noEmit && tsc -p worker/tsconfig.json",
+    "preview": "vite preview",
+    "test:backend": "node --test tests/backend-auth.test.mjs",
+    "test:auth": "node --test tests/auth-initialization.test.mjs",
+    "test:ai": "node --test tests/ai-service.test.mjs",
+    "test:inspiration": "node --test tests/inspiration-capture.test.mjs tests/inspiration-library.test.mjs",
+    "test:learning": "node --test tests/learning-rich-media.test.mjs tests/learning-save-consistency.test.mjs tests/learning-upload-security.test.mjs",
+    "test:learning-save": "node --test tests/learning-save-consistency.test.mjs",
+    "test:learning-security": "node --test tests/learning-upload-security.test.mjs",
+    "test:ime": "node --test tests/ai-input-ime.test.mjs",
+    "test:todo": "node --test tests/todo-schedule.test.mjs tests/todo-consistency.test.mjs",
+    "test:todo-consistency": "node --test tests/todo-schedule.test.mjs tests/todo-consistency.test.mjs",
+    "test:sites": "node --test tests/sites-worker.test.mjs"
+  },
+  "dependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "5.0.4",
+    "framer-motion": "^12.43.0",
+    "lucide-react": "^1.27.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "recharts": "^3.10.1",
+    "typescript": "^7.0.2",
+    "vite": "6.4.2",
+    "vite-plugin-pwa": "^1.3.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "https-proxy-agent": "^9.1.0"
+  }
+}

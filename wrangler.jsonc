@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dazzjun-workspace",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-07-30",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dazzjun-workspace-v61",
+      "database_id": "bafb5750-707d-4084-9fe5-725c09a30de8"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "LEARNING_ASSETS",
+      "bucket_name": "dazzjun-learning-assets"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
