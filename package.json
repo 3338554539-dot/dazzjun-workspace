@@ -13,14 +13,17 @@
     "test:backend": "node --test tests/backend-auth.test.mjs",
     "test:auth": "node --test tests/auth-initialization.test.mjs",
     "test:ai": "node --test tests/ai-service.test.mjs",
-    "test:inspiration": "node --test tests/inspiration-capture.test.mjs tests/inspiration-library.test.mjs",
+    "test:inspiration": "node --test tests/inspiration-capture.test.mjs tests/inspiration-cover.test.mjs tests/inspiration-library.test.mjs",
     "test:learning": "node --test tests/learning-rich-media.test.mjs tests/learning-save-consistency.test.mjs tests/learning-upload-security.test.mjs",
     "test:learning-save": "node --test tests/learning-save-consistency.test.mjs",
     "test:learning-security": "node --test tests/learning-upload-security.test.mjs",
     "test:ime": "node --test tests/ai-input-ime.test.mjs",
     "test:todo": "node --test tests/todo-schedule.test.mjs tests/todo-consistency.test.mjs",
     "test:todo-consistency": "node --test tests/todo-schedule.test.mjs tests/todo-consistency.test.mjs",
-    "test:sites": "node --test tests/sites-worker.test.mjs"
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "test:workspace-v9-growth": "node --test tests/workspace-v9-growth.test.mjs",
+    "test:workspace-v9-navigation": "node --test tests/workspace-v9-navigation.test.mjs",
+    "test:public-readiness": "node --test tests/public-readiness-security.test.mjs"
   },
   "dependencies": {
     "@types/react": "^19.2.17",
@@ -32,7 +35,7 @@
     "react-dom": "19.2.0",
     "recharts": "^3.10.1",
     "typescript": "^7.0.2",
-    "vite": "6.4.2",
+    "vite": "6.4.3",
     "vite-plugin-pwa": "^1.3.0",
     "zustand": "^5.0.14"
   },

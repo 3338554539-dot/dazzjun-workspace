@@ -19,6 +19,13 @@ const typeLabels = {
 };
 
 const recent = (value, limit = 80) => Array.isArray(value) ? value.slice(-limit) : [];
+export const MAX_REPORT_CONTEXT_LENGTH = 12_000;
+
+function boundedSnapshot(snapshot, maxLength = MAX_REPORT_CONTEXT_LENGTH) {
+  const serialized = JSON.stringify(snapshot);
+  if (serialized.length <= maxLength) return serialized;
+  return `${serialized.slice(0, maxLength)}…`;
+}
 
 export function buildWorkspaceSnapshot(workspace, scopes) {
   const snapshot = {};
@@ -43,7 +50,7 @@ export function buildDeepSeekMessages(type, workspace, scopes) {
     },
     {
       role: "user",
-      content: `分析日期：${new Date().toISOString()}\n已授权数据范围：${scopes.join(", ")}\n个人数据摘要：${JSON.stringify(snapshot)}`,
+      content: `分析日期：${new Date().toISOString()}\n已授权数据范围：${scopes.join(", ")}\n个人数据摘要：${boundedSnapshot(snapshot)}`,
     },
   ];
 }

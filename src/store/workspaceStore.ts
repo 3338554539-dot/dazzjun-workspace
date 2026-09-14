@@ -17,6 +17,7 @@ type WorkspaceActions = {
   ensureWeeklyReview: (dateOrOffset?: string | number) => WeeklyReview;
   updateWeeklyReview: (weekKey: string, patch: Partial<WeeklyReview>) => void;
   addInspiration: (entry: Omit<InspirationItem, "id" | "createdAt" | "saved" | "portal"> & Partial<Pick<InspirationItem, "portal">>) => void;
+  updateInspiration: (id: string, patch: Partial<Pick<InspirationItem, "cover" | "image" | "coverSource" | "coverType">>) => void;
   toggleInspiration: (id: string) => void;
   deleteInspiration: (id: string) => void;
   addInspirationCategory: (name: string) => void;
@@ -88,6 +89,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       },
       updateWeeklyReview: (weekKey, patch) => set((state) => ({ weeklyReviews: state.weeklyReviews.map((review) => review.weekKey === weekKey ? { ...review, ...patch, updatedAt: new Date().toISOString() } : review) })),
       addInspiration: (entry) => set((state) => ({ inspirations: [{ ...entry, portal: entry.portal ?? (entry.platform === "xiaohongshu" ? "小红书" : "抖音"), id: crypto.randomUUID(), saved: true, createdAt: new Date().toISOString().slice(0, 10) }, ...state.inspirations] })),
+      updateInspiration: (id, patch) => set((state) => ({ inspirations: state.inspirations.map((item) => item.id === id ? { ...item, ...patch } : item) })),
       toggleInspiration: (id) => set((state) => ({ inspirations: state.inspirations.map((item) => item.id === id ? { ...item, saved: !item.saved } : item) })),
       deleteInspiration: (id) => set((state) => ({ inspirations: state.inspirations.filter((item) => item.id !== id) })),
       addInspirationCategory: (name) => set((state) => {

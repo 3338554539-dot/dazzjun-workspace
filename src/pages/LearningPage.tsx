@@ -1,13 +1,15 @@
 import { useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Clock3, Download, ExternalLink, FileText, Image as ImageIcon, Link2, Paperclip, Plus, Save, Search, Trash2, X } from "lucide-react";
-import { EmptyState, FadeNotice, Panel, PanelTitle } from "../components/ui";
+import { ArrowDown, ArrowUp, BookOpen, Download, ExternalLink, FileText, Image as ImageIcon, Link2, Paperclip, Plus, Save, Search, Trash2, X } from "lucide-react";
+import { PageContextHeader, SectionHeader, StatusStrip, WorkspaceEmptyState } from "../components/workspace/GrowthUI";
 import type { LearningBlock, LearningCategory, LearningEntry, LearningFileBlock, LearningImageBlock, LearningLinkBlock } from "../data/types";
 import { learningApi } from "../api/client";
 import { useAccountData } from "../auth/AccountDataProvider";
-import { shortDate, todayISO } from "../services/date";
+import { isBetween, shortDate, todayISO, weekMeta } from "../services/date";
+import { learningGrowthStats } from "../services/growthModules";
 import { formatLearningFileSize, learningBlocksForEntry, learningSearchText } from "../services/learningBlocks";
 import { canSaveLearning, saveLearningEntryConsistently } from "../services/learningSave";
 import { useWorkspaceStore } from "../store/workspaceStore";
+import { useWorkspaceNavigation } from "../components/workspace/WorkspaceNavigation";
 
 const categories: LearningCategory[] = ["书籍", "课程", "技能", "文章"];
 const imageAccept = ".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp";
@@ -48,7 +50,7 @@ function LearningDetail({ entry, onNew }: { entry: LearningEntry; onNew: () => v
         <section><h3>学习内容</h3><p>{entry.content}</p></section>
         <section><h3>笔记</h3><p>{entry.notes || "暂无补充笔记"}</p></section>
         <section><h3>今日收获</h3><p>{entry.gain || "暂无收获总结"}</p></section>
-      </> : <div className="learning-rich-detail">{blocks.map((block) => <RichBlockView key={block.id} block={block} onPreview={setPreview}/>)}</div>}
+      </> : <><div className="learning-rich-detail">{blocks.map((block) => <RichBlockView key={block.id} block={block} onPreview={setPreview}/>)}</div>{entry.gain && <section className="learning-detail-reflection"><h3>今日收获 / Reflection</h3><p>{entry.gain}</p></section>}</>}
       <button className="secondary-button" onClick={onNew}><Plus size={15}/>继续记录新的学习</button>
     </article>
     {preview && <div className="learning-lightbox" role="dialog" aria-modal="true" aria-label={preview.name} onClick={() => setPreview(null)}><button onClick={() => setPreview(null)} aria-label="关闭"><X/></button><img src={preview.url} alt={preview.name}/></div>}
@@ -56,15 +58,19 @@ function LearningDetail({ entry, onNew }: { entry: LearningEntry; onNew: () => v
 }
 
 export function LearningPage() {
+  const { params } = useWorkspaceNavigation();
   const entries = useWorkspaceStore((state) => state.learning);
   const addLearning = useWorkspaceStore((state) => state.addLearning);
   const { saveWorkspaceNow } = useAccountData();
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(entries[0]?.id ?? "");
+  const requestedFilter = params.get("filter");
+  const [selectedId, setSelectedId] = useState(params.get("mode") === "new" ? "" : params.get("recordId") ?? "");
+  const [filter, setFilter] = useState<"all" | "week" | "month">(["all", "week", "month"].includes(requestedFilter ?? "") ? requestedFilter as "all" | "week" | "month" : "all");
   const [saved, setSaved] = useState(false);
   const [draftId, setDraftId] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState({ date: todayISO(), title: "", category: "书籍" as LearningCategory, duration: 60 });
   const [blocks, setBlocks] = useState<LearningBlock[]>([newTextBlock()]);
+  const [reflection, setReflection] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -79,8 +85,14 @@ export function LearningPage() {
   const imageInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const filtered = useMemo(() => entries.filter((entry) => learningSearchText(entry).includes(query.toLowerCase())), [entries, query]);
+  const filtered = useMemo(() => {
+    const week = weekMeta();
+    const monthStart = new Date(); monthStart.setDate(monthStart.getDate() - 29);
+    const monthISO = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}-${String(monthStart.getDate()).padStart(2, "0")}`;
+    return entries.filter((entry) => learningSearchText(entry).includes(query.toLowerCase())).filter((entry) => filter === "all" || filter === "week" ? filter === "all" || isBetween(entry.date, week.start, week.end) : entry.date >= monthISO).sort((a, b) => b.date.localeCompare(a.date));
+  }, [entries, filter, query]);
   const selected = entries.find((entry) => entry.id === selectedId);
+  const stats = useMemo(() => learningGrowthStats(entries), [entries]);
 
   const insertBlock = (block: LearningBlock) => setBlocks((current) => [...current, block, newTextBlock()]);
   const uploadFiles = async (files: File[]) => {
@@ -129,7 +141,7 @@ export function LearningPage() {
     if (isWebUrl(text)) { event.preventDefault(); await addLink(text); }
   };
   const resetDraft = () => {
-    setSelectedId(""); setDraftId(crypto.randomUUID()); setForm({ date: todayISO(), title: "", category: "书籍", duration: 60 }); setBlocks([newTextBlock()]); setError(""); setUploadProgress({ completed: 0, total: 0 }); setUploadSuccess(false); setUploadFailed(false);
+    setSelectedId(""); setDraftId(crypto.randomUUID()); setForm({ date: todayISO(), title: "", category: "书籍", duration: 60 }); setBlocks([newTextBlock()]); setReflection(""); setError(""); setUploadProgress({ completed: 0, total: 0 }); setUploadSuccess(false); setUploadFailed(false);
   };
   const submit = async () => {
     const cleanBlocks = blocks.filter((block) => block.type !== "text" || block.content.trim());
@@ -140,26 +152,38 @@ export function LearningPage() {
     setSaving(true); setSaved(false); setError("");
     try {
       await saveLearningEntryConsistently({
-        entry: { ...form, id: entryId, title: form.title.trim(), content: text, notes: "", gain: "", learningBlocks: cleanBlocks },
+        entry: { ...form, id: entryId, title: form.title.trim(), content: text, notes: "", gain: reflection.trim(), learningBlocks: cleanBlocks },
         addLearning,
         persistWorkspace: saveWorkspaceNow,
         confirmAssets: learningApi.confirmAssets,
       });
-      setSelectedId(entryId); setDraftId(crypto.randomUUID()); setForm({ date: todayISO(), title: "", category: "书籍", duration: 60 }); setBlocks([newTextBlock()]); setUploadProgress({ completed: 0, total: 0 }); setUploadSuccess(false); setUploadFailed(false);
+      setSelectedId(entryId); setDraftId(crypto.randomUUID()); setForm({ date: todayISO(), title: "", category: "书籍", duration: 60 }); setBlocks([newTextBlock()]); setReflection(""); setUploadProgress({ completed: 0, total: 0 }); setUploadSuccess(false); setUploadFailed(false);
       setSaved(true); setTimeout(() => setSaved(false), 1600);
     } catch { setError("保存失败，请重试"); }
     finally { setSaving(false); }
   };
 
-  return <div className="learning-layout page-grid">
-    <Panel className="learning-history">
-      <PanelTitle icon={BookOpen} action={<button className="primary-compact" disabled={uploading || saving} onClick={resetDraft}><Plus size={15}/>新日志</button>}>学习日志</PanelTitle>
-      <div className="inline-search"><Search size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、分类或内容"/></div>
-      <div className="history-list">{filtered.map((entry) => <button key={entry.id} disabled={uploading || saving} className={selectedId === entry.id ? "active" : ""} onClick={() => setSelectedId(entry.id)}><time>{shortDate(entry.date)}</time><i><strong>{entry.title}</strong><small>{entry.category} · {entry.duration} 分钟</small></i><span><Clock3 size={13}/>{entry.duration}m <ArrowRight size={14}/></span></button>)}</div>
-      {!filtered.length && <EmptyState>没有找到匹配的学习记录。</EmptyState>}
-    </Panel>
-    <Panel className="learning-form">
-      <PanelTitle icon={selected ? BookOpen : Plus} action={saved ? <FadeNotice>学习日志已保存</FadeNotice> : undefined}>{selected ? "学习记录详情" : "创建学习日志"}</PanelTitle>
+  return <div className="growth-page learning-workspace">
+    <PageContextHeader eyebrow="LEARNING VAULT" title="学习日志" description="把零散输入沉淀为可回看的个人知识文档。" action={<button className="growth-primary-action" disabled={uploading || saving} onClick={resetDraft}><Plus size={15}/>新学习日志</button>}/>
+    <StatusStrip items={[
+      { label: "本周学习", value: `${stats.weeklyMinutes} min`, detail: "累计专注时间", tone: "violet" },
+      { label: "本周记录", value: stats.weeklyCount, detail: "学习文档数量" },
+      { label: "累计日志", value: stats.total, detail: "个人知识资产", tone: "green" },
+      { label: "最近学习", value: stats.latestTopic, detail: "最近记录分类", tone: "yellow" },
+    ]}/>
+    <div className="growth-main-grid learning-main-grid">
+    <aside className="growth-timeline learning-vault-list">
+      <SectionHeader icon={BookOpen} eyebrow="YOUR LIBRARY" title="学习档案"/>
+      <div className="growth-inline-search"><Search size={15}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索学习日志"/></div>
+      <div className="growth-filter-tabs">{([['all','全部'],['week','本周'],['month','30天']] as const).map(([id, label]) => <button key={id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{label}</button>)}</div>
+      <div className="learning-category-index">{categories.map((category) => <button key={category} onClick={() => setQuery(category)}><span>{category}</span><i>{entries.filter((entry) => entry.category === category).length}</i></button>)}</div>
+      <div className="growth-log-list">{filtered.map((entry) => <button key={entry.id} disabled={uploading || saving} className={selectedId === entry.id ? "active" : ""} onClick={() => setSelectedId(entry.id)}><time>{shortDate(entry.date)}</time><span><strong>{entry.title}</strong><small>{entry.category} · {entry.duration} min</small></span></button>)}</div>
+      {!filtered.length && (
+        <WorkspaceEmptyState icon={BookOpen} title="还没有学习记录" description="把今天学到的东西留下来。" action="新学习日志" onAction={resetDraft}/>
+      )}
+    </aside>
+    <section className="growth-editor learning-document">
+      <SectionHeader icon={selected ? BookOpen : Plus} eyebrow={selected ? `${selected.category} · ${shortDate(selected.date)}` : "PERSONAL KNOWLEDGE DOCUMENT"} title={selected ? "学习记录" : "创建学习日志"} action={saved ? <span className="growth-saved">学习日志已保存</span> : undefined}/>
       {selected ? <LearningDetail entry={selected} onNew={resetDraft}/> : <>
         <div className="form-grid four learning-meta-grid">
           <label>学习标题<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="例如：深度工作阅读笔记"/></label>
@@ -187,10 +211,12 @@ export function LearningPage() {
           {!uploading && uploadFailed && <div className="learning-upload-status failed">部分附件上传失败，请重新选择后再保存</div>}
           {linkOpen && <div className="learning-link-entry"><Link2 size={17}/><input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); void addLink(); } }} placeholder="粘贴 https:// 开头的网页链接"/><button onClick={() => void addLink()}>生成卡片</button><button className="icon-button" onClick={() => setLinkOpen(false)} aria-label="取消"><X size={16}/></button></div>}
         </div>
+        <label className="learning-reflection"><span>今日收获 / Reflection</span><textarea value={reflection} onChange={(event) => setReflection(event.target.value)} placeholder="留下今天最值得记住的一点…"/></label>
         {error && <div className="learning-error" role="alert">{error}</div>}
-        <button className="primary-button" onClick={() => void submit()} disabled={!canSaveLearning({ uploading: uploading || linkLoading, uploadFailed, saving })}><Save size={17}/>{saving ? "正在保存…" : "保存学习日志"}</button>
+        <footer className="growth-editor-footer"><span>{uploading ? `正在上传 ${uploadProgress.completed}/${uploadProgress.total}` : "保存后同步到个人学习档案"}</span><button className="growth-primary-action" onClick={() => void submit()} disabled={!canSaveLearning({ uploading: uploading || linkLoading, uploadFailed, saving })}><Save size={17}/>{saving ? "正在保存…" : "保存学习日志"}</button></footer>
       </>}
-    </Panel>
+    </section>
+    </div>
     {preview && <div className="learning-lightbox" role="dialog" aria-modal="true" aria-label={preview.name} onClick={() => setPreview(null)}><button onClick={() => setPreview(null)} aria-label="关闭"><X/></button><img src={preview.url} alt={preview.name}/></div>}
   </div>;
 }

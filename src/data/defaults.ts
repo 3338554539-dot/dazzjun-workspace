@@ -1,4 +1,4 @@
-import type { InspirationCategory, InspirationItem, InspirationPlatform, LearningBlock, LearningEntry, TodoItem, WorkspaceData } from "./types";
+import type { InspirationCategory, InspirationCoverType, InspirationItem, InspirationPlatform, LearningBlock, LearningEntry, TodoItem, WorkspaceData } from "./types";
 
 export const defaultInspirationCategories: InspirationCategory[] = [];
 export const legacyPresetCategoryIds = new Set(["design", "ai", "photography", "fashion", "music", "business"]);
@@ -31,6 +31,8 @@ export const defaultWorkspaceData: WorkspaceData = {
 type LegacyInspiration = Partial<Omit<InspirationItem, "platform">> & { platform?: InspirationPlatform | "抖音" | "小红书"; title?: string; source?: string; category?: string; tags?: string[] };
 type LegacyTodo = Partial<TodoItem> & { dueAt?: string };
 type LegacyLearning = Partial<LearningEntry> & { learningContent?: string; learningNote?: string; reflection?: string };
+const inspirationCoverTypes = new Set<InspirationCoverType>(["video_first_frame", "video_poster", "first_image", "og_image", "main_image", "fallback"]);
+const isDefaultInspirationCover = (value: string) => /^\/assets\/inspiration-(?:ribbons|sea)\.png$/u.test(value);
 
 function normalizeLearningBlocksForWorkspace(value: unknown): LearningBlock[] {
   if (!Array.isArray(value)) return [];
@@ -108,12 +110,16 @@ export function normalizeWorkspaceData(input: Partial<WorkspaceData>): Workspace
     const categoryId = String((item.categoryId && categories.some((category) => category.id === item.categoryId) ? item.categoryId : "") || categoryByName.get(cleanCategoryName(String(item.category || ""))) || "");
     const title = String(item.title || item.content || item.source || "收藏内容");
     const cover = String(item.cover || item.image || (platform === "xiaohongshu" ? "/assets/inspiration-sea.png" : "/assets/inspiration-ribbons.png"));
+    const coverType = inspirationCoverTypes.has(item.coverType as InspirationCoverType) ? item.coverType as InspirationCoverType : isDefaultInspirationCover(cover) ? "fallback" : undefined;
+    const coverSource = String(item.coverSource || (coverType === "fallback" ? "" : cover));
     return {
       id: item.id || crypto.randomUUID(),
       platform,
       portal,
       title,
       cover,
+      ...(coverType ? { coverType } : {}),
+      ...(coverSource ? { coverSource } : {}),
       author: String(item.author || ""),
       sourceText: String(item.sourceText || item.source || ""),
       categoryId,

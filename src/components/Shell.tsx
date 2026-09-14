@@ -7,17 +7,13 @@ import {
   Command,
   Download,
   Dumbbell,
-  Flame,
   Heart,
   Languages,
   Lightbulb,
-  Moon,
-  Palette,
   PenLine,
   Play,
   Plus,
   RefreshCw,
-  Scan,
   Search,
   Smile,
   Sparkles,
@@ -26,28 +22,32 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DazzjunMark, IntelligenceNodeIcon, SearchNodeIcon, SpaceSwitchIcon } from "./DazzjunBrand";
+import { DazzjunMark } from "./DazzjunBrand";
 import { ProfilePanel } from "./ProfilePanel";
 import { SkinSelector } from "./SkinSelector";
-import { useAccountData, useAuth } from "../auth";
+import { CommandBar } from "./workspace/CommandBar";
+import { ContextRail } from "./workspace/ContextRail";
+import { MobileNavigation } from "./workspace/MobileNavigation";
+import { Sidebar } from "./workspace/Sidebar";
+import { WorkspaceNavigationProvider } from "./workspace/WorkspaceNavigation";
+import type { WorkspaceNavigate } from "./workspace/WorkspaceNavigation";
+import type { WorkspaceNavItem } from "./workspace/types";
+import { useAuth } from "../auth";
 import type { WorkspaceData } from "../data/types";
 import { useWorkspaceStats } from "../hooks/useWorkspaceStats";
 import { exportWorkspaceBackup, parseWorkspaceBackup } from "../services/backup";
-import { getGreeting, todayISO, toISODate } from "../services/date";
+import { todayISO, toISODate } from "../services/date";
 import { isIMEComposing, shouldSubmitOnEnter } from "../services/ime";
 import { searchWorkspace, type SearchTarget } from "../services/search";
 import { todoTimingFromStart } from "../services/todoSelectors";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import { applyPWAUpdate } from "../pwa/update";
-import { useWorkspaceTheme } from "../theme";
 
 export type PageKey = "overview" | "todo" | "mood" | "learning" | "english" | "fitness" | "weekly" | "inspiration" | "ai";
 
-type NavItem = { id: Exclude<PageKey, "overview">; label: string; status: string; icon: typeof SquareCheckBig };
-
 const resultIcons: Record<SearchTarget, typeof SquareCheckBig> = { todo: SquareCheckBig, mood: Heart, learning: BookOpen, english: Languages, fitness: Dumbbell, weekly: Brain, inspiration: Lightbulb, ai: BrainCircuit };
 
-export function AppShell({ active, onNavigate, children }: { active: PageKey; onNavigate: (page: PageKey) => void; children: React.ReactNode }) {
+export function WorkspaceShell({ active, onNavigate, locationKey, children }: { active: PageKey; onNavigate: WorkspaceNavigate; locationKey: string; children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [quickTaskOpen, setQuickTaskOpen] = useState(false);
@@ -57,14 +57,14 @@ export function AppShell({ active, onNavigate, children }: { active: PageKey; on
   const [skinOpen, setSkinOpen] = useState(false);
   const [pwaUpdateAvailable, setPwaUpdateAvailable] = useState(false);
   const [pwaUpdating, setPwaUpdating] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const backupInput = useRef<HTMLInputElement>(null);
   const workspace = useWorkspaceStore();
   const { user } = useAuth();
-  const { syncStatus } = useAccountData();
-  const theme = useWorkspaceTheme();
   const stats = useWorkspaceStats();
   const workspaceData: WorkspaceData = { todos: workspace.todos, moods: workspace.moods, learning: workspace.learning, english: workspace.english, fitness: workspace.fitness, weeklyReviews: workspace.weeklyReviews, inspirations: workspace.inspirations, inspirationCategories: workspace.inspirationCategories, inspirationNotes: workspace.inspirationNotes, inspirationTags: workspace.inspirationTags, habitCompletions: workspace.habitCompletions, inspirationLinks: workspace.inspirationLinks, aiInsights: workspace.aiInsights, knowledgeLinks: workspace.knowledgeLinks, memories: workspace.memories, usageEvents: workspace.usageEvents, aiNotifications: workspace.aiNotifications, goals: workspace.goals };
-  const navItems: NavItem[] = [
+  const navItems: WorkspaceNavItem[] = [
     { id: "todo", label: "To Do List", status: `进行中 ${stats.todo.pending}`, icon: SquareCheckBig },
     { id: "mood", label: "心情日记", status: stats.moodToday ? "今日已记录" : "今日待记录", icon: Heart },
     { id: "learning", label: "学习日志", status: `本周 ${stats.learningMinutes}m`, icon: BookOpen },
@@ -114,6 +114,17 @@ export function AppShell({ active, onNavigate, children }: { active: PageKey; on
   }, []);
 
   useEffect(() => {
+    if (!identityOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest(".profile-panel, .os-sidebar-account, .os-mobile-account")) return;
+      setIdentityOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [identityOpen]);
+
+  useEffect(() => {
     const onUpdate = () => setPwaUpdateAvailable(true);
     window.addEventListener("dazzjun:pwa-update", onUpdate);
     return () => window.removeEventListener("dazzjun:pwa-update", onUpdate);
@@ -123,41 +134,29 @@ export function AppShell({ active, onNavigate, children }: { active: PageKey; on
     setPwaUpdating(true);
     await applyPWAUpdate();
   };
+  const hasContextRail = active === "overview" || active === "todo" || active === "mood" || active === "learning" || active === "english" || active === "fitness";
 
   return (
     <div className="app-stage">
-      <div className="app-window">
-        <header className="window-bar">
-          <div className="window-left"><button className="window-title" onClick={() => onNavigate("overview")} aria-label="返回 Dazzjun 工作台首页"><DazzjunMark/><span><strong>Dazzjun</strong><small>PERSONAL WORKSPACE</small></span></button></div>
-          <div className="window-actions">
-            <motion.button whileHover={{ y: -2 }} whileTap={{ scale: .97 }} className="search-pill" onClick={() => setSearchOpen(true)} aria-label="打开全局搜索"><SearchNodeIcon/><span>搜索一切...</span><kbd>⌘ K</kbd></motion.button>
-            <motion.button whileHover={{ y: -2 }} whileTap={{ scale: .95 }} className={`intelligence-entry ${active === "ai" ? "active" : ""}`} onClick={() => onNavigate("ai")} aria-label="打开 Dazzjun AI Assistant"><IntelligenceNodeIcon/><span>AI CORE</span><i/></motion.button>
-            <div className="command-node-group" aria-label="Dazzjun Command Center">
-              <motion.button whileHover={{ y: -3 }} whileTap={{ scale: .95 }} className={`command-node skin-node ${skinOpen ? "open" : ""}`} onClick={() => { setSkinOpen(!skinOpen); setIdentityOpen(false); }} aria-label="打开皮肤与壁纸" aria-expanded={skinOpen} title="皮肤 / Wallpaper"><Palette/><span className="node-label">皮肤</span></motion.button>
-              <motion.button whileHover={{ y: -3 }} whileTap={{ scale: .95 }} className="command-node intelligence-node" onClick={() => { setDataNotice("Dazzjun Intelligence 正在持续感知你的成长轨迹"); window.setTimeout(() => setDataNotice(""), 2600); }} aria-label="Dazzjun 智能感知" title="智能感知"><IntelligenceNodeIcon/><i className="signal-dot"/><span className="node-label">感知</span></motion.button>
-              <motion.button whileHover={{ y: -3 }} whileTap={{ scale: .95 }} className="command-node identity-node" onClick={() => { setIdentityOpen(!identityOpen); setSkinOpen(false); }} aria-label={`打开 ${user?.displayName ?? "Dazzjun"} 的个人主页`} aria-expanded={identityOpen}><span className="identity-initial">{user?.displayName.slice(0, 1).toUpperCase() ?? <DazzjunMark/>}</span><span className="node-label">账户</span></motion.button>
-              <motion.button whileHover={{ y: -3 }} whileTap={{ scale: .95 }} className={`command-node space-switch ${identityOpen ? "open" : ""}`} onClick={() => { setIdentityOpen(!identityOpen); setSkinOpen(false); }} aria-label="展开空间控制" aria-expanded={identityOpen}><SpaceSwitchIcon/><span className="node-label">空间</span></motion.button>
-            </div>
-            <input ref={backupInput} className="backup-file-input" type="file" accept="application/json,.json" onChange={(event) => restoreBackup(event.target.files?.[0])}/>
-            <ProfilePanel open={identityOpen} onClose={() => setIdentityOpen(false)}/>
-            <SkinSelector open={skinOpen} onClose={() => setSkinOpen(false)}/>
+      <WorkspaceNavigationProvider active={active} navigate={onNavigate} locationKey={locationKey}>
+      <div className={`workspace-shell-v9 ${sidebarCollapsed ? "sidebar-is-collapsed" : ""}`}>
+        <Sidebar active={active} collapsed={sidebarCollapsed} displayName={user?.displayName ?? "Dazzjun"} items={navItems} onNavigate={onNavigate} onSearch={() => setSearchOpen(true)} onSettings={() => { setSkinOpen(true); setIdentityOpen(false); }} onAccount={() => { setIdentityOpen((value) => !value); setSkinOpen(false); }} onToggle={() => setSidebarCollapsed((value) => !value)}/>
+        <div className="os-workspace-frame">
+          <CommandBar active={active} onSearch={() => setSearchOpen(true)} onAI={() => onNavigate("ai")} onTheme={() => { setSkinOpen(!skinOpen); setIdentityOpen(false); }} onInsight={() => { setDataNotice("Dazzjun Intelligence 正在持续感知你的成长轨迹"); window.setTimeout(() => setDataNotice(""), 2600); }}/>
+          <div className={`os-workspace-body ${hasContextRail && !railCollapsed ? "with-context-rail" : ""}`}>
+            <main className="workspace-content os-workspace-content">{children}</main>
+            <ContextRail active={active} collapsed={railCollapsed} onCollapse={() => setRailCollapsed(true)} onNavigate={onNavigate}/>
+            {railCollapsed && hasContextRail && <button className="os-rail-reopen" onClick={() => setRailCollapsed(false)} aria-label="展开状态栏"><Sparkles size={16}/></button>}
           </div>
-        </header>
-
-        <section className="hero" aria-label="Dazzjun 品牌空间">
-          <AnimatePresence mode="sync" initial={false}>
-            <motion.img key={theme.id} className="hero-art" src={theme.wallpaper} alt={theme.heroAlt} initial={{ opacity: 0, scale: 1.018, filter: "blur(10px)" }} animate={{ opacity: .95, scale: 1, filter: "blur(0px)" }} exit={{ opacity: 0, scale: 1.008, filter: "blur(8px)" }} transition={{ duration: .5, ease: [0.22, 1, 0.36, 1] }}/>
-          </AnimatePresence>
-          <div className="hero-copy"><button className="brand-button" onClick={() => onNavigate("overview")}><span className="hero-brand-lockup"><DazzjunMark/><span className="brand-name">Dazzjun</span></span><span className="brand-subtitle">PERSONAL CREATIVE WORKSPACE</span><span className="brand-tagline">记录生活，创造灵感，持续成长。</span><span className="brand-greeting">{getGreeting()}</span></button></div>
-        </section>
-
-        <nav className="module-nav" aria-label="工作台模块"><div className="nav-track">{navItems.map((item) => { const Icon = item.icon; const selected = active === item.id; return <motion.button whileHover={{ y: -3 }} whileTap={{ scale: .98 }} className={`nav-item ${selected ? "active" : ""}`} key={item.id} onClick={() => onNavigate(item.id)}><Icon size={25} strokeWidth={1.6}/><span className="nav-copy"><strong>{item.label}</strong><small>{item.status}</small></span></motion.button>; })}</div></nav>
-
-        <main className="workspace-content">{children}</main>
-
-        <footer className="status-bar"><span><Moon size={14}/>深色模式</span><span><Scan size={14}/>{syncStatus === "saved" ? "账户已同步" : syncStatus === "saving" ? "同步中" : "连接待检查"}</span><p><Sparkles size={15}/>保持专注，持续行动，你正在成为更好的自己。</p><span className="streak"><Flame size={14}/>英语连续 <b>{stats.englishStreak} 天</b></span><time dateTime={todayISO()}>{new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date())}</time></footer>
-        <motion.button whileTap={{ scale: .92 }} className="mobile-command-button" onClick={() => setSearchOpen(true)} aria-label="打开快捷操作"><Plus size={22}/></motion.button>
+        </div>
+        <MobileNavigation active={active} onNavigate={onNavigate} onAccount={() => { setIdentityOpen(true); setSkinOpen(false); }} onSettings={() => { setSkinOpen(true); setIdentityOpen(false); }}/>
+        <div className="os-overlay-anchor">
+          <input ref={backupInput} className="backup-file-input" type="file" accept="application/json,.json" onChange={(event) => restoreBackup(event.target.files?.[0])}/>
+          <ProfilePanel open={identityOpen} onClose={() => setIdentityOpen(false)}/>
+          <SkinSelector open={skinOpen} onClose={() => setSkinOpen(false)}/>
+        </div>
       </div>
+      </WorkspaceNavigationProvider>
 
       <AnimatePresence>
         {searchOpen && <motion.div className="search-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeCommand}>
@@ -175,3 +174,5 @@ export function AppShell({ active, onNavigate, children }: { active: PageKey; on
     </div>
   );
 }
+
+export const AppShell = WorkspaceShell;

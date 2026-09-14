@@ -8,6 +8,16 @@ const defaultCoverBySource: Record<InspirationPlatform, string> = {
   web: "/assets/inspiration-ribbons.png",
 };
 
+export function isDefaultInspirationCover(value?: string) {
+  return /^\/assets\/inspiration-(?:ribbons|sea)\.png$/u.test(String(value || "").trim());
+}
+
+export function needsInspirationCoverRefresh(record: { cover?: string; image?: string; coverType?: string }) {
+  if (record.coverType === "fallback") return true;
+  const candidates = [record.cover, record.image].map((value) => String(value || "").trim()).filter(Boolean);
+  return !candidates.length || candidates.every(isDefaultInspirationCover);
+}
+
 export function inspirationCoverCandidates(
   record: { cover?: string; image?: string; platform: InspirationPlatform },
   includeDefault = true,

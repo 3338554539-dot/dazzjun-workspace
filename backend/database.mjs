@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultPreferences, emptyWorkspace, normalizeWorkspaceForStorage } from "./defaults.mjs";
 import { dailyInspirationOffset, dailyInspirationResponse } from "../worker/inspiration/daily.js";
+import { RATE_LIMIT_DEFAULTS, rateLimitWindow } from "../worker/security/rate-limit.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = process.env.DAZZJUN_DATA_DIR ? path.resolve(process.env.DAZZJUN_DATA_DIR) : path.join(root, ".data");
@@ -15,6 +16,16 @@ database.exec(readFileSync(path.join(root, "database", "schema.sql"), "utf8"));
 const learningAssetColumns = new Set(database.prepare("PRAGMA table_info(learning_assets)").all().map((column) => column.name));
 if (!learningAssetColumns.has("status")) database.exec("ALTER TABLE learning_assets ADD COLUMN status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','uploaded','attached'))");
 if (!learningAssetColumns.has("attached_at")) database.exec("ALTER TABLE learning_assets ADD COLUMN attached_at TEXT");
+
+const consumeRateLimitSql = `
+  INSERT INTO rate_limit_buckets(key,scope,window_start,count,updated_at)
+  VALUES(?,?,?,1,?)
+  ON CONFLICT(scope,key) DO UPDATE SET
+    window_start=excluded.window_start,
+    count=CASE WHEN rate_limit_buckets.window_start=excluded.window_start THEN rate_limit_buckets.count+1 ELSE 1 END,
+    updated_at=excluded.updated_at
+  WHERE rate_limit_buckets.window_start<>excluded.window_start OR rate_limit_buckets.count<?
+`;
 
 const userProjection = `id, email, phone, display_name AS displayName, bio, avatar_url AS avatarUrl, created_at AS createdAt, updated_at AS updatedAt`;
 
@@ -77,6 +88,39 @@ export function deleteUserSessions(userId) {
 
 export function getPasswordRecord(userId) {
   return database.prepare("SELECT password_hash AS passwordHash, password_salt AS passwordSalt FROM users WHERE id = ?").get(userId);
+}
+
+export function checkRateLimitBucket(config, key, nowMs = Date.now()) {
+  const { windowStart, retryAfter } = rateLimitWindow(config, nowMs);
+  const row = database.prepare("SELECT count FROM rate_limit_buckets WHERE scope=? AND key=? AND window_start=?").get(config.scope, key, windowStart);
+  return { allowed: Number(row?.count || 0) < config.limit, retryAfter };
+}
+
+export function consumeRateLimitBucket(config, key, nowMs = Date.now()) {
+  const { windowStart, retryAfter } = rateLimitWindow(config, nowMs);
+  const result = database.prepare(consumeRateLimitSql).run(key, config.scope, windowStart, new Date(nowMs).toISOString(), config.limit);
+  return { allowed: result.changes === 1, retryAfter };
+}
+
+export function clearRateLimitBuckets(entries) {
+  if (!entries.length) return;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const statement = database.prepare("DELETE FROM rate_limit_buckets WHERE scope=? AND key=?");
+    for (const entry of entries) statement.run(entry.scope, entry.key);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function maybeCleanupRateLimitBuckets(seedKey, nowMs = Date.now()) {
+  const minute = Math.floor(nowMs / 60_000);
+  const sample = Number.parseInt(String(seedKey || "00").slice(0, 2), 16) || 0;
+  if ((sample + minute) % 64 !== 0) return;
+  database.prepare("DELETE FROM rate_limit_buckets WHERE updated_at<?")
+    .run(new Date(nowMs - RATE_LIMIT_DEFAULTS.retentionSeconds * 1000).toISOString());
 }
 
 export function getWorkspace(userId) {

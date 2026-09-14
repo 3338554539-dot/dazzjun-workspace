@@ -144,6 +144,15 @@ CREATE TABLE IF NOT EXISTS ai_reports (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  key TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  window_start INTEGER NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0 CHECK(count >= 0),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(scope, key)
+);
+
 CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS profiles_user_idx ON profiles(user_id);
@@ -164,3 +173,4 @@ CREATE INDEX IF NOT EXISTS ai_memory_user_idx ON ai_memory(user_id, importance D
 CREATE INDEX IF NOT EXISTS ai_conversations_user_conversation_idx ON ai_conversations(user_id, conversation_id, created_at, id);
 CREATE INDEX IF NOT EXISTS ai_insights_user_date_idx ON ai_insights(user_id, insight_date DESC);
 CREATE INDEX IF NOT EXISTS ai_reports_user_idx ON ai_reports(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS rate_limit_buckets_updated_idx ON rate_limit_buckets(updated_at);

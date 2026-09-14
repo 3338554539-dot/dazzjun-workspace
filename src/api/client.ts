@@ -1,4 +1,4 @@
-import type { InspirationPlatform, LearningFileBlock, LearningImageBlock, LearningLinkBlock, WorkspaceData } from "../data/types";
+import type { InspirationCoverType, InspirationPlatform, LearningFileBlock, LearningImageBlock, LearningLinkBlock, WorkspaceData } from "../data/types";
 import type { DazzjunUser } from "../models/user";
 import type { ThemeId, WorkspaceTheme } from "../theme";
 
@@ -48,6 +48,8 @@ export interface InspirationCaptureResult {
   platform: InspirationPlatform;
   title: string;
   cover: string;
+  coverSource: string;
+  coverType: InspirationCoverType;
   author: string;
   tags: string[];
   url: string;

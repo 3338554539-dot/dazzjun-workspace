@@ -3,6 +3,11 @@ const MAX_URL_LENGTH = 2_048;
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 3;
 const MAX_HTML_LENGTH = 2_000_000;
+const DEFAULT_COVERS = {
+  douyin: "/assets/inspiration-ribbons.png",
+  xiaohongshu: "/assets/inspiration-sea.png",
+  web: "/assets/inspiration-ribbons.png",
+};
 
 const trimUrlToken = (value) => value.replace(/[\]}>),，。！？；、]+$/u, "");
 const cleanText = (value, limit = 220) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
@@ -33,6 +38,13 @@ function isPrivateHost(hostname) {
   if (/^127\./u.test(host) || /^0\./u.test(host) || /^10\./u.test(host) || /^192\.168\./u.test(host) || /^169\.254\./u.test(host)) return true;
   const match = host.match(/^172\.(\d{1,3})\./u);
   return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+}
+
+function isPlatformShortLink(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "v.douyin.com" || host === "xhslink.com" || host.endsWith(".xhslink.com");
+  } catch { return false; }
 }
 
 export function detectCapturePlatform(value) {
@@ -90,6 +102,15 @@ function resolveImageUrl(value, baseUrl) {
   } catch { return ""; }
 }
 
+function isDecorativeImage(value, context = "") {
+  const candidate = `${String(value || "")} ${String(context || "")}`.toLowerCase();
+  return /(?:^|[\s/_.?&=-])(avatar|favicon|logo|site-logo|app-logo|icon|sprite|emoji|badge|qrcode|qr-code|advert|advertisement|placeholder|default|default-share|share-default)(?:[\s/_.?&=-]|$)/u.test(candidate);
+}
+
+function validContentImages(values, context = "") {
+  return [...new Set(values)].filter((value) => value && !isDecorativeImage(value, context));
+}
+
 function structuredImageCandidates(html, baseUrl, keys) {
   const decoded = decodeStructuredHtml(`${String(html || "")}\n${decodedScriptPayloads(html)}`);
   const candidates = [];
@@ -106,7 +127,7 @@ function structuredImageCandidates(html, baseUrl, keys) {
     }
     if (candidates.length) break;
   }
-  return [...new Set(candidates)];
+  return validContentImages(candidates);
 }
 
 function posterImageCandidates(html, baseUrl) {
@@ -115,7 +136,54 @@ function posterImageCandidates(html, baseUrl) {
     const poster = resolveImageUrl(attributeMap(tag).poster, baseUrl);
     if (poster) candidates.push(poster);
   }
+  return validContentImages(candidates, "video poster");
+}
+
+function imageTagCandidates(html, baseUrl) {
+  const candidates = [];
+  for (const tag of String(html || "").match(/<img\b[^>]*>/giu) || []) {
+    const attributes = attributeMap(tag);
+    const context = `${attributes.class || ""} ${attributes.id || ""} ${attributes.alt || ""} ${attributes.role || ""}`;
+    if (isDecorativeImage("", context)) continue;
+    const width = Number.parseInt(attributes.width || "0", 10);
+    const height = Number.parseInt(attributes.height || "0", 10);
+    if ((width && width < 160) || (height && height < 120)) continue;
+    const candidate = resolveImageUrl(attributes["data-original"] || attributes["data-src"] || attributes.src, baseUrl);
+    if (candidate && !isDecorativeImage(candidate, context)) candidates.push(candidate);
+  }
   return [...new Set(candidates)];
+}
+
+function mainContentImageCandidates(html, baseUrl) {
+  const content = String(html || "");
+  const scoped = [];
+  for (const match of content.matchAll(/<(?:article|main)\b[^>]*>([\s\S]*?)<\/(?:article|main)>/giu)) scoped.push(...imageTagCandidates(match[1], baseUrl));
+  return [...new Set([...scoped, ...imageTagCandidates(content, baseUrl)])];
+}
+
+function isVideoContent(html, platform, meta) {
+  if (platform === "douyin") return true;
+  const content = decodeStructuredHtml(String(html || ""));
+  return /video/iu.test(meta.get("og:type") || "")
+    || /<video\b/iu.test(content)
+    || /["'](?:type|noteType|note_type)["']\s*:\s*["']video["']/iu.test(content)
+    || /["']video["']\s*:\s*\{/iu.test(content);
+}
+
+export function selectInspirationCover({ platform, contentType, videoFirstFrame = "", videoPosters = [], firstImages = [], ogImages = [], mainImages = [] }) {
+  const choose = (values) => validContentImages(values)[0] || "";
+  const firstFrame = choose([videoFirstFrame]);
+  if (contentType === "video" && firstFrame) return { cover: firstFrame, coverSource: firstFrame, coverType: "video_first_frame" };
+  const poster = contentType === "video" ? choose(videoPosters) : "";
+  if (poster) return { cover: poster, coverSource: poster, coverType: "video_poster" };
+  const firstImage = contentType === "image" ? choose(firstImages) : "";
+  if (firstImage) return { cover: firstImage, coverSource: firstImage, coverType: "first_image" };
+  const ogImage = choose(ogImages);
+  if (ogImage) return { cover: ogImage, coverSource: ogImage, coverType: "og_image" };
+  const mainImage = choose(mainImages);
+  if (mainImage) return { cover: mainImage, coverSource: mainImage, coverType: platform === "web" ? "main_image" : "first_image" };
+  const fallback = DEFAULT_COVERS[platform] || DEFAULT_COVERS.web;
+  return { cover: fallback, coverSource: fallback, coverType: "fallback" };
 }
 
 function metadataFromHtml(html, baseUrl) {
@@ -128,20 +196,32 @@ function metadataFromHtml(html, baseUrl) {
   const titleTag = String(html || "").match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] || "";
   const title = cleanText(meta.get("og:title") || meta.get("twitter:title") || decodeEntities(titleTag), 220);
   const platform = detectCapturePlatform(baseUrl);
-  const structured = platform === "douyin"
-    ? structuredImageCandidates(html, baseUrl, ["originCover", "origin_cover", "cover", "dynamicCover", "dynamic_cover"])
-    : platform === "xiaohongshu"
-      ? structuredImageCandidates(html, baseUrl, ["urlDefault", "url_default", "imageList", "image_list", "noteDetail", "note_detail"])
+  const contentType = isVideoContent(html, platform, meta) ? "video" : "image";
+  const firstFrames = contentType === "video"
+    ? structuredImageCandidates(html, baseUrl, ["firstFrame", "first_frame", "firstFrameUrl", "first_frame_url"])
+    : [];
+  const structuredPosters = platform === "douyin"
+    ? structuredImageCandidates(html, baseUrl, ["originCover", "origin_cover", "cover", "dynamicCover", "dynamic_cover", "poster"])
+    : platform === "xiaohongshu" && contentType === "video"
+      ? structuredImageCandidates(html, baseUrl, ["videoPoster", "video_poster", "poster", "cover", "imageList", "image_list", "urlDefault", "url_default"])
       : [];
-  const posters = posterImageCandidates(html, baseUrl);
-  const ogImage = resolveImageUrl(meta.get("og:image") || meta.get("og:image:url"), baseUrl);
-  const twitterImage = resolveImageUrl(meta.get("twitter:image") || meta.get("twitter:image:src"), baseUrl);
-  const cover = platform === "douyin"
-    ? structured[0] || posters[0] || ogImage || twitterImage || ""
-    : platform === "xiaohongshu"
-      ? structured[0] || ogImage || twitterImage || posters[0] || ""
-      : ogImage || twitterImage || posters[0] || "";
-  return { title, cover, author: cleanText(meta.get("author") || meta.get("article:author") || meta.get("og:site_name"), 120) };
+  const firstImages = platform === "xiaohongshu" && contentType === "image"
+    ? structuredImageCandidates(html, baseUrl, ["imageList", "image_list", "urlDefault", "url_default"])
+    : [];
+  const posters = [...structuredPosters, ...posterImageCandidates(html, baseUrl)];
+  const allowPageMetadata = !isPlatformShortLink(baseUrl);
+  const ogImage = allowPageMetadata ? resolveImageUrl(meta.get("og:image") || meta.get("og:image:url"), baseUrl) : "";
+  const twitterImage = allowPageMetadata ? resolveImageUrl(meta.get("twitter:image") || meta.get("twitter:image:src"), baseUrl) : "";
+  const cover = selectInspirationCover({
+    platform,
+    contentType,
+    videoFirstFrame: firstFrames[0],
+    videoPosters: posters,
+    firstImages,
+    ogImages: [ogImage, twitterImage],
+    mainImages: allowPageMetadata ? mainContentImageCandidates(html, baseUrl) : [],
+  });
+  return { title, ...cover, contentType, author: cleanText(meta.get("author") || meta.get("article:author") || meta.get("og:site_name"), 120) };
 }
 
 async function fetchMetadata(initialUrl, fetchImpl) {
@@ -223,7 +303,9 @@ export async function captureInspiration({ url, sourceText, fetchImpl = fetch })
   return {
     platform,
     title,
-    cover: fetched.metadata.cover || "",
+    cover: fetched.metadata.cover || DEFAULT_COVERS[platform] || DEFAULT_COVERS.web,
+    coverSource: fetched.metadata.coverSource || DEFAULT_COVERS[platform] || DEFAULT_COVERS.web,
+    coverType: fetched.metadata.coverType || "fallback",
     author,
     tags: parsed.tags,
     url: fetched.url,

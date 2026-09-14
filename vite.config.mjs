@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
-const workerOrigin = "https://dazzjun-workspace.dazzjun04.workers.dev";
+const workerOrigin = process.env.DAZZJUN_API_PROXY_TARGET || "https://dazzjun-workspace.dazzjun04.workers.dev";
 const systemProxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
 
 const workerProxy = {

@@ -30,6 +30,8 @@ test("follows a Douyin short link and prefers the real video cover from page JSO
   assert.equal(result.title, "漂亮不是被爱的持续必要条件");
   assert.deepEqual(result.tags, ["军师系列", "情感军师"]);
   assert.equal(result.cover, "https://p3-sign.douyinpic.com/real-cover.jpeg?x=1");
+  assert.equal(result.coverType, "video_poster");
+  assert.equal(result.coverSource, result.cover);
   assert.notEqual(result.cover.startsWith("/assets/"), true);
 });
 
@@ -46,6 +48,8 @@ test("prefers Xiaohongshu imageList.urlDefault over Open Graph fallbacks", async
   assert.equal(result.title, "啊啊啊啊啊女神你是一颗青苹果🍏");
   assert.equal(result.author, "安宥真_AnYuJin0901");
   assert.equal(result.cover, "https://sns-img-qc.xhscdn.com/real-note.webp?imageView2=2");
+  assert.equal(result.coverType, "first_image");
+  assert.equal(result.coverSource, result.cover);
   assert.notEqual(result.cover.startsWith("/assets/"), true);
 });
 
@@ -58,6 +62,8 @@ test("normalizes bare URLs and captures ordinary webpages", async () => {
     platform: "web",
     title: "A page",
     cover: "https://www.example.com/cover.png",
+    coverSource: "https://www.example.com/cover.png",
+    coverType: "og_image",
     author: "Dazzjun",
     tags: [],
     url: "https://www.example.com/article",
@@ -100,5 +106,5 @@ test("keeps the daily inspiration selection stable and maps existing rows", () =
     cover: "/assets/inspiration-ribbons.png",
     image: "/assets/inspiration-ribbons.png",
     platform: "douyin",
-  }, "user-a").cover, "");
+  }, "user-a").cover, "/assets/inspiration-ribbons.png");
 });

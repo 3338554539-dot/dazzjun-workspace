@@ -1,51 +1,74 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CalendarDays, Frown, Heart, Meh, Save, Smile, Sparkles } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { FadeNotice, Panel, PanelTitle } from "../components/ui";
-import type { MoodKind } from "../data/types";
-import { displayDate, monthKey, todayISO } from "../services/date";
+import { BrainCircuit, Frown, Heart, Meh, Plus, Save, Smile, Sparkles } from "lucide-react";
+import { PageContextHeader, SectionHeader, StatusStrip, TimelineGroup, WorkspaceEmptyState } from "../components/workspace/GrowthUI";
+import { useWorkspaceNavigation } from "../components/workspace/WorkspaceNavigation";
+import type { MoodEntry, MoodKind } from "../data/types";
+import { shortDate, todayISO } from "../services/date";
+import { moodGrowthStats, timelinePeriod } from "../services/growthModules";
 import { useWorkspaceStore } from "../store/workspaceStore";
 
 const moods = [
-  { id: "低落" as MoodKind, score: 32, icon: Frown },
-  { id: "疲惫" as MoodKind, score: 45, icon: Meh },
-  { id: "平静" as MoodKind, score: 68, icon: Meh },
-  { id: "开心" as MoodKind, score: 84, icon: Smile },
+  { id: "低落" as MoodKind, score: 32, icon: Frown }, { id: "疲惫" as MoodKind, score: 45, icon: Meh },
+  { id: "平静" as MoodKind, score: 68, icon: Meh }, { id: "开心" as MoodKind, score: 84, icon: Smile },
   { id: "兴奋" as MoodKind, score: 96, icon: Sparkles },
 ];
+const periodLabels = { today: "今天", yesterday: "昨天", week: "本周", older: "更早" } as const;
 
 export function MoodPage() {
   const entries = useWorkspaceStore((state) => state.moods);
   const upsertMood = useWorkspaceStore((state) => state.upsertMood);
+  const { navigate, params } = useWorkspaceNavigation();
   const today = todayISO();
-  const existing = entries.find((entry) => entry.date === today);
+  const targetDate = params.get("date") ?? today;
+  const targetRecord = params.get("recordId");
+  const initialId = params.get("mode") === "new" ? "new" : targetRecord ?? entries.find((entry) => entry.date === targetDate)?.id ?? "new";
+  const [selectedId, setSelectedId] = useState(initialId);
+  const existing = selectedId === "new" ? undefined : entries.find((entry) => entry.id === selectedId);
   const [selected, setSelected] = useState<MoodKind>(existing?.mood ?? "平静");
   const [story, setStory] = useState(existing?.story ?? "");
   const [note, setNote] = useState(existing?.note ?? "");
   const [saved, setSaved] = useState(false);
-  useEffect(() => { if (existing) { setSelected(existing.mood); setStory(existing.story); setNote(existing.note); } }, [existing?.id]);
-  const monthly = useMemo(() => entries.filter((entry) => entry.date.startsWith(monthKey())).sort((a,b) => a.date.localeCompare(b.date)), [entries]);
-  const recent = [...entries].sort((a,b) => b.date.localeCompare(a.date)).slice(0,4);
+  const stats = useMemo(() => moodGrowthStats(entries, today), [entries, today]);
+  const grouped = useMemo(() => {
+    const result = { today: [] as MoodEntry[], yesterday: [] as MoodEntry[], week: [] as MoodEntry[], older: [] as MoodEntry[] };
+    [...entries].sort((a, b) => b.date.localeCompare(a.date)).forEach((entry) => result[timelinePeriod(entry.date, today)].push(entry));
+    return result;
+  }, [entries, today]);
+
+  useEffect(() => {
+    if (!existing) { setSelected("平静"); setStory(""); setNote(""); return; }
+    setSelected(existing.mood); setStory(existing.story); setNote(existing.note);
+  }, [existing?.id]);
+
+  const startNew = () => { setSelectedId("new"); setSelected("平静"); setStory(""); setNote(""); };
   const save = () => {
     const choice = moods.find((item) => item.id === selected)!;
-    upsertMood({ date: today, mood: selected, score: choice.score, story, note });
-    setSaved(true); setTimeout(() => setSaved(false), 1600);
+    upsertMood({ date: existing?.date ?? targetDate, mood: selected, score: choice.score, story, note });
+    setSaved(true); window.setTimeout(() => setSaved(false), 1600);
   };
-  return (
-    <div className="mood-layout page-grid">
-      <div className="mood-date-column"><Panel><small>今天是</small><strong className="large-date">{displayDate(today)}</strong><span>{new Intl.DateTimeFormat("zh-CN", { weekday: "long" }).format(new Date())}</span></Panel><Panel><PanelTitle icon={CalendarDays}>{today.slice(0,7).replace("-","年")}月</PanelTitle><CalendarGrid activeDates={new Set(monthly.map((item) => item.date))}/></Panel></div>
-      <Panel className="mood-editor"><PanelTitle icon={Heart} action={saved ? <FadeNotice>已保存到情绪数据库</FadeNotice> : undefined}>今天的心情是</PanelTitle><div className="mood-options">{moods.map((mood) => <button key={mood.id} className={selected === mood.id ? "selected" : ""} onClick={() => setSelected(mood.id)}><mood.icon size={28}/><span>{mood.id}</span></button>)}</div><label>今天发生了什么？<textarea value={story} onChange={(event) => setStory(event.target.value)} placeholder="记录今天发生的事情…"/></label><label>今天想记录什么？<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="你的感受、想法、收获或感激的事情…"/></label><button className="primary-button" onClick={save}><Save size={17}/>保存日记</button></Panel>
-      <div className="mood-insights"><Panel><PanelTitle icon={Sparkles} action={<small>本月 {monthly.length} 次记录</small>}>月度情绪趋势</PanelTitle><ResponsiveContainer width="100%" height={180}><AreaChart data={monthly.map((item) => ({ day: Number(item.date.slice(8)), score: item.score, mood: item.mood }))}><defs><linearGradient id="moodFillV2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9e79ff" stopOpacity={.5}/><stop offset="95%" stopColor="#9e79ff" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="rgba(255,255,255,.06)" vertical={false}/><XAxis dataKey="day" tick={{ fill: "#73758b", fontSize: 10 }} axisLine={false} tickLine={false}/><YAxis hide domain={[0,100]}/><Tooltip contentStyle={{ background: "#111626", border: "1px solid #34364c", borderRadius: 12 }}/><Area type="monotone" dataKey="score" stroke="#aa86ff" strokeWidth={2} fill="url(#moodFillV2)" animationDuration={900}/></AreaChart></ResponsiveContainer></Panel><Panel><PanelTitle icon={BookOpen}>情绪历史</PanelTitle><div className="recent-list">{recent.map((entry) => <span key={entry.id}><Smile size={22}/><i><b>{entry.story || "今天没有写事件摘要"}</b>{entry.date} · {entry.mood} · {entry.score} 分</i></span>)}</div></Panel></div>
-    </div>
-  );
-}
 
-function CalendarGrid({ activeDates }: { activeDates: Set<string> }) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
-  const count = new Date(year, month + 1, 0).getDate();
-  const cells = Array.from({ length: firstDay + count }, (_, index) => index < firstDay ? null : index - firstDay + 1);
-  return <div className="calendar-grid"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>{cells.map((day,index) => day ? <span key={index} className={`${day === now.getDate() ? "today" : ""} ${activeDates.has(`${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`) ? "has-entry" : ""}`}>{day}</span> : <span key={index}/>)}</div>;
+  return <div className="growth-page mood-workspace">
+    <PageContextHeader eyebrow="EMOTIONAL JOURNAL" title="心情日记" description="记录此刻，也看见情绪随时间留下的轨迹。" action={<button className="growth-primary-action" onClick={startNew}><Plus size={15}/>记录心情</button>}/>
+    <StatusStrip items={[
+      { label: "今日状态", value: stats.today?.mood ?? "未记录", detail: stats.today ? `${stats.today.score} 情绪值` : "留意此刻感受", tone: "violet" },
+      { label: "本周记录", value: `${stats.weeklyCount} 次`, detail: "情绪记录频率" },
+      { label: "7天平均", value: stats.average || "--", detail: "最近状态均值", tone: "green" },
+      { label: "连续记录", value: `${stats.streak} 天`, detail: "保持自我观察", tone: "yellow" },
+    ]}/>
+    <div className="growth-main-grid">
+      <aside className="growth-timeline">
+        <SectionHeader icon={Heart} eyebrow="TIMELINE" title="情绪时间线"/>
+        {entries.length ? (Object.keys(periodLabels) as Array<keyof typeof periodLabels>).map((period) => grouped[period].length ? <TimelineGroup key={period} title={periodLabels[period]}>{grouped[period].map((entry) => <button key={entry.id} className={selectedId === entry.id ? "active" : ""} onClick={() => setSelectedId(entry.id)}><i>{entry.mood.slice(0, 1)}</i><span><strong>{entry.story || entry.mood}</strong><small>{shortDate(entry.date)} · {entry.mood}</small></span></button>)}</TimelineGroup> : null) : (
+          <WorkspaceEmptyState icon={Heart} title="还没有心情记录" description="从此刻的状态开始。" action="记录心情" onAction={startNew}/>
+        )}
+      </aside>
+      <section className="growth-editor mood-document">
+        <SectionHeader icon={existing ? Heart : Plus} eyebrow={existing ? shortDate(existing.date) : "TODAY"} title={existing ? "日记详情" : "记录此刻"} action={saved ? <span className="growth-saved">已保存</span> : undefined}/>
+        <div className="mood-choice-row">{moods.map((mood) => <button key={mood.id} className={selected === mood.id ? "selected" : ""} onClick={() => setSelected(mood.id)}><mood.icon size={21}/><span>{mood.id}</span></button>)}</div>
+        <label className="growth-writing-field"><span>今天发生了什么？</span><textarea value={story} onChange={(event) => setStory(event.target.value)} placeholder="记录事件、变化，或只是一个瞬间…"/></label>
+        <label className="growth-writing-field compact"><span>有什么想留下的吗？</span><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="写下感受、想法或一句给自己的话…"/></label>
+        <footer className="growth-editor-footer"><button className="growth-secondary-action" onClick={() => navigate("ai")}><BrainCircuit size={15}/>与 AI 一起梳理</button><button className="growth-primary-action" onClick={save}><Save size={15}/>保存日记</button></footer>
+      </section>
+    </div>
+  </div>;
 }

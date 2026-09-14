@@ -1,47 +1,77 @@
-import { useMemo, useState } from "react";
-import { BookOpen, CalendarDays, Check, CheckCircle2, Clock3, Headphones, Languages, Mic2, Save, Trophy, Zap } from "lucide-react";
-import { CountUp, FadeNotice, Panel, PanelTitle } from "../components/ui";
-import type { EnglishCategory } from "../data/types";
+import { useEffect, useMemo, useState } from "react";
+import { BookOpen, Check, Clock3, Headphones, Languages, Mic2, Plus, Save } from "lucide-react";
+import { PageContextHeader, SectionHeader, StatusStrip, TimelineGroup, WorkspaceEmptyState } from "../components/workspace/GrowthUI";
+import type { EnglishCategory, EnglishEntry } from "../data/types";
 import { englishMinutesThisWeek, englishStreak } from "../services/analytics";
-import { daysAgoISO, todayISO } from "../services/date";
+import { shortDate, todayISO } from "../services/date";
+import { decodeEnglishPracticeNote, encodeEnglishPracticeNote, timelinePeriod } from "../services/growthModules";
 import { useWorkspaceStore } from "../store/workspaceStore";
+import { useWorkspaceNavigation } from "../components/workspace/WorkspaceNavigation";
 
 const training = [
-  { id: "单词" as EnglishCategory, icon: Languages, label: "单词学习" },
-  { id: "听力" as EnglishCategory, icon: Headphones, label: "听力训练" },
-  { id: "阅读" as EnglishCategory, icon: BookOpen, label: "阅读训练" },
-  { id: "口语" as EnglishCategory, icon: Mic2, label: "口语训练" },
+  { id: "单词" as EnglishCategory, icon: Languages, label: "单词" }, { id: "听力" as EnglishCategory, icon: Headphones, label: "听力" },
+  { id: "阅读" as EnglishCategory, icon: BookOpen, label: "阅读" }, { id: "口语" as EnglishCategory, icon: Mic2, label: "口语" },
 ];
+const periodLabels = { today: "今天", yesterday: "昨天", week: "本周", older: "更早" } as const;
 
 export function EnglishPage() {
+  const { params } = useWorkspaceNavigation();
   const entries = useWorkspaceStore((state) => state.english);
   const goals = useWorkspaceStore((state) => state.goals);
   const upsertEnglish = useWorkspaceStore((state) => state.upsertEnglish);
   const today = todayISO();
-  const existing = entries.find((entry) => entry.date === today);
+  const requestedId = params.get("mode") === "new" ? "" : params.get("recordId") ?? "";
+  const [selectedId, setSelectedId] = useState(requestedId);
+  const existing = entries.find((entry) => entry.id === selectedId) ?? entries.find((entry) => entry.date === today);
+  const initialNote = decodeEnglishPracticeNote(existing?.note ?? "");
   const [duration, setDuration] = useState(existing?.duration ?? 30);
-  const [words, setWords] = useState(existing?.words ?? 50);
-  const [exercises, setExercises] = useState(existing?.exercises ?? 3);
+  const [words, setWords] = useState(existing?.words ?? 0);
+  const [exercises, setExercises] = useState(existing?.exercises ?? 1);
   const [categories, setCategories] = useState<EnglishCategory[]>(existing?.categories ?? ["单词"]);
-  const [note, setNote] = useState(existing?.note ?? "");
+  const [practice, setPractice] = useState(initialNote);
   const [saved, setSaved] = useState(false);
-  const streak = englishStreak(entries);
   const weeklyMinutes = englishMinutesThisWeek(entries);
-  const contributionDays = useMemo(() => Array.from({ length: 84 }, (_, index) => daysAgoISO(83-index)).map((date) => ({ date, entry: entries.find((item) => item.date === date) })), [entries]);
+  const weeklyEntries = entries.filter((entry) => timelinePeriod(entry.date, today) !== "older");
+  const grouped = useMemo(() => {
+    const result = { today: [] as EnglishEntry[], yesterday: [] as EnglishEntry[], week: [] as EnglishEntry[], older: [] as EnglishEntry[] };
+    [...entries].sort((a, b) => b.date.localeCompare(a.date)).forEach((entry) => result[timelinePeriod(entry.date, today)].push(entry));
+    return result;
+  }, [entries, today]);
   const save = () => {
-    upsertEnglish({ date: today, checkedIn: true, duration, words, exercises, categories, note });
-    setSaved(true); setTimeout(() => setSaved(false), 1600);
+    upsertEnglish({ date: existing?.date ?? today, checkedIn: true, duration, words, exercises, categories, note: encodeEnglishPracticeNote(practice) });
+    setSaved(true); window.setTimeout(() => setSaved(false), 1600);
   };
-  const toggleCategory = (item: EnglishCategory) => setCategories(categories.includes(item) ? categories.filter((value) => value !== item) : [...categories, item]);
-  return (
-    <div className="english-page">
-      <div className="english-top page-grid">
-        <Panel className="checkin-card"><PanelTitle icon={CheckCircle2}>今日打卡</PanelTitle><div className={`streak-medal ${existing?.checkedIn ? "complete" : ""}`}><Trophy size={34}/><strong><CountUp value={streak}/></strong><span>连续学习天数</span></div><button className="primary-button wide" onClick={save}>{existing?.checkedIn ? <><Check size={17}/>更新今日记录</> : <><Zap size={17}/>完成今日打卡</>}</button></Panel>
-        <Panel className="english-overview"><PanelTitle icon={CalendarDays} action={saved ? <FadeNotice>英语数据已保存</FadeNotice> : undefined}>今日学习数据</PanelTitle><div className="editable-metrics"><label><span>学习时间</span><input type="number" min="0" value={duration} onChange={(e) => setDuration(Number(e.target.value))}/><small>min</small></label><label><span>单词数量</span><input type="number" min="0" value={words} onChange={(e) => setWords(Number(e.target.value))}/><small>words</small></label><label><span>完成练习</span><input type="number" min="0" value={exercises} onChange={(e) => setExercises(Number(e.target.value))}/><small>sets</small></label></div><div className="linear-progress"><span style={{ width: `${Math.min(100, weeklyMinutes / goals.weeklyEnglishMinutes * 100)}%` }}/></div><div className="goal-copy"><small>本周目标：{goals.weeklyEnglishMinutes} 分钟</small><b>{weeklyMinutes} min</b></div><label className="english-note">今日笔记<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="记录一个新单词或一句表达"/></label></Panel>
-        <Panel className="training-picker"><PanelTitle icon={Languages}>训练分类</PanelTitle><div className="training-buttons">{training.map((item) => <button className={categories.includes(item.id) ? "active" : ""} key={item.id} onClick={() => toggleCategory(item.id)}><item.icon size={19}/><span>{item.label}</span>{categories.includes(item.id) && <Check size={14}/>}</button>)}</div></Panel>
-      </div>
-      <Panel className="contribution-panel"><PanelTitle icon={CalendarDays} action={<span className="muted-label">过去 12 周 · {entries.filter((item) => item.checkedIn).length} 次学习</span>}>英语学习日历</PanelTitle><div className="contribution-wrap"><div className="contribution-grid">{contributionDays.map(({date,entry}) => { const level = entry ? Math.min(4, Math.max(1, Math.ceil(entry.duration / 15))) : 0; return <button key={date} className={`contribution level-${level}`} title={`${date} · ${entry ? `${entry.duration} 分钟` : "未学习"}`} aria-label={`${date}${entry ? `学习${entry.duration}分钟` : "未学习"}`}/>; })}</div><div className="contribution-legend"><span>少</span>{[0,1,2,3,4].map((level) => <i className={`level-${level}`} key={level}/>)}<span>多</span></div></div></Panel>
-      <div className="english-summary-grid"><Panel><PanelTitle icon={Clock3}>本周学习</PanelTitle><strong className="category-value"><CountUp value={weeklyMinutes}/> min</strong><small>完成目标 {Math.round(weeklyMinutes/goals.weeklyEnglishMinutes*100)}%</small></Panel><Panel><PanelTitle icon={Languages}>累计单词</PanelTitle><strong className="category-value"><CountUp value={entries.reduce((sum,item) => sum + item.words,0)}/> 词</strong><small>持续扩大词汇量</small></Panel><Panel><PanelTitle icon={Save}>累计练习</PanelTitle><strong className="category-value"><CountUp value={entries.reduce((sum,item) => sum + item.exercises,0)}/> 组</strong><small>四项能力持续训练</small></Panel></div>
+  const toggleCategory = (item: EnglishCategory) => setCategories((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item]);
+
+  const newMode = params.get("mode") === "new";
+  useEffect(() => { if (newMode) window.requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("#english-learned")?.focus()); }, [newMode]);
+  const openEntry = (entry: EnglishEntry) => {
+    const note = decodeEnglishPracticeNote(entry.note);
+    setSelectedId(entry.id); setDuration(entry.duration); setWords(entry.words); setExercises(entry.exercises); setCategories(entry.categories); setPractice(note);
+  };
+
+  return <div className="growth-page english-workspace">
+    <PageContextHeader eyebrow="ENGLISH PRACTICE" title="英语学习" description="把语言练习变成稳定、轻盈的日常节奏。" action={<span className="growth-header-date">{shortDate(today)}</span>}/>
+    <StatusStrip items={[
+      { label: "连续打卡", value: `${englishStreak(entries)} 天`, detail: "保持语言触感", tone: "violet" },
+      { label: "本周时间", value: `${weeklyMinutes} min`, detail: "累计学习时长" },
+      { label: "本周目标", value: `${weeklyMinutes} / ${goals.weeklyEnglishMinutes}`, detail: `${Math.min(100, Math.round(weeklyMinutes / goals.weeklyEnglishMinutes * 100))}% 已完成`, tone: "green" },
+      { label: "本周练习", value: `${weeklyEntries.length} 次`, detail: "听说读写累计", tone: "yellow" },
+    ]}/>
+    <div className="growth-main-grid">
+      <aside className="growth-timeline"><SectionHeader icon={Clock3} eyebrow="RECENT PRACTICE" title="最近练习"/>
+        {entries.length ? (Object.keys(periodLabels) as Array<keyof typeof periodLabels>).map((period) => grouped[period].length ? <TimelineGroup key={period} title={periodLabels[period]}>{grouped[period].map((entry) => <button key={entry.id} className={existing?.id === entry.id ? "active" : ""} onClick={() => openEntry(entry)}><i>{entry.duration}</i><span><strong>{entry.categories.join(" · ") || "英语练习"}</strong><small>{shortDate(entry.date)} · {entry.duration} min</small></span></button>)}</TimelineGroup> : null) : <WorkspaceEmptyState icon={Languages} title="还没有英语练习" description="从今天的一小段输入开始。" action="开始今日练习" onAction={() => document.querySelector<HTMLTextAreaElement>("#english-learned")?.focus()}/>}
+      </aside>
+      <section className="growth-editor english-document">
+        <SectionHeader icon={Languages} eyebrow={existing?.date === today || !existing ? "TODAY'S ENGLISH" : shortDate(existing.date)} title={existing?.date === today || !existing ? "今日英语" : "练习记录"} action={saved ? <span className="growth-saved">已保存</span> : undefined}/>
+        <div className="english-compact-metrics"><label>学习时间<span><input type="number" min="0" value={duration} onChange={(event) => setDuration(Number(event.target.value))}/><small>min</small></span></label><label>新单词数<span><input type="number" min="0" value={words} onChange={(event) => setWords(Number(event.target.value))}/><small>words</small></span></label><label>练习组数<span><input type="number" min="0" value={exercises} onChange={(event) => setExercises(Number(event.target.value))}/><small>sets</small></span></label></div>
+        <div className="english-category-row">{training.map((item) => <button key={item.id} className={categories.includes(item.id) ? "active" : ""} onClick={() => toggleCategory(item.id)}><item.icon size={16}/>{item.label}{categories.includes(item.id) && <Check size={13}/>}</button>)}</div>
+        <label className="growth-writing-field compact"><span>今天学了什么？</span><textarea id="english-learned" value={practice.learned} onChange={(event) => setPractice({ ...practice, learned: event.target.value })} placeholder="主题、材料或练习内容…"/></label>
+        <div className="english-pair-fields"><label><span>新单词</span><input value={practice.words} onChange={(event) => setPractice({ ...practice, words: event.target.value })} placeholder="focus, momentum, clarity"/></label><label><span>好表达</span><input value={practice.expressions} onChange={(event) => setPractice({ ...practice, expressions: event.target.value })} placeholder="A useful expression…"/></label></div>
+        <label className="english-line-field"><span>材料 / 链接</span><input value={practice.material} onChange={(event) => setPractice({ ...practice, material: event.target.value })} placeholder="https:// 或材料名称"/></label>
+        <label className="english-line-field"><span>一句总结</span><input value={practice.summary} onChange={(event) => setPractice({ ...practice, summary: event.target.value })} placeholder="用一句话结束今天的练习"/></label>
+        <footer className="growth-editor-footer"><span>完成后计入连续打卡</span><button className="growth-primary-action" onClick={save}><Save size={15}/>{existing?.checkedIn ? "更新今日记录" : "完成今日打卡"}</button></footer>
+      </section>
     </div>
-  );
+  </div>;
 }

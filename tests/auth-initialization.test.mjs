@@ -49,6 +49,14 @@ test("PWA updates do not reload pages during background controller changes", asy
 
 test("AI Core path is restored directly from the current location", async () => {
   const app = await readSource("src/App.tsx");
-  assert.match(app, /window\.location\.pathname\s*===\s*"\/ai-core"\s*\?\s*"ai"/);
+  assert.match(app, /ai:\s*"\/ai-core"/);
   assert.match(app, /useState<PageKey>\(pageFromLocation\)/);
+});
+
+test("workspace module paths survive direct refreshes", async () => {
+  const app = await readSource("src/App.tsx");
+  for (const path of ["/todo", "/mood", "/learning", "/english", "/fitness", "/weekly", "/inspiration", "/ai-core"]) {
+    assert.ok(app.includes(`"${path}"`), `missing direct route ${path}`);
+  }
+  assert.match(app, /pagePaths\[page\]/);
 });

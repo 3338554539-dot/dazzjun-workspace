@@ -3,6 +3,20 @@ import type { AIInsightRecord, AIInsightType } from "../data/types";
 
 type AIRequestOptions = RequestInit & { timeoutMs?: number };
 
+export class AICoreRequestError extends Error {
+  status: number;
+  retryAfter: number | null;
+  code: string | null;
+
+  constructor(message: string, status: number, retryAfter: number | null = null, code: string | null = null) {
+    super(message);
+    this.name = "AICoreRequestError";
+    this.status = status;
+    this.retryAfter = retryAfter;
+    this.code = code;
+  }
+}
+
 async function aiRequest<T>(path: string, options: AIRequestOptions = {}): Promise<T> {
   const { timeoutMs = 0, ...requestOptions } = options;
   const controller = new AbortController();
@@ -16,8 +30,11 @@ async function aiRequest<T>(path: string, options: AIRequestOptions = {}): Promi
   } finally {
     if (timeout !== undefined) globalThis.clearTimeout(timeout);
   }
-  const payload = await response.json().catch(() => ({})) as { error?: string };
-  if (!response.ok) throw new Error(payload.error || "AI Core 请求失败");
+  const payload = await response.json().catch(() => ({})) as { error?: string; code?: string };
+  if (!response.ok) {
+    const retryAfterValue = Number.parseInt(response.headers.get("retry-after") || "", 10);
+    throw new AICoreRequestError(payload.error || "AI Core 请求失败", response.status, Number.isFinite(retryAfterValue) ? retryAfterValue : null, payload.code || null);
+  }
   return payload as T;
 }
 

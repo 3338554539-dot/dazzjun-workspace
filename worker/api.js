@@ -1,6 +1,6 @@
-import { generateAIReport } from "./ai/report-service.js";
+import { generateAIReport, normalizeAIRequest } from "./ai/report-service.js";
 import { testDeepSeekConnection } from "./ai/providers/deepseek.js";
-import { generateAIResponse } from "./ai/chat-runtime/service.js";
+import { generateAIResponse, validateAIMessage } from "./ai/chat-runtime/service.js";
 import { DEEPSEEK_CHAT_TIMEOUT_MS, DEEPSEEK_INSIGHT_TIMEOUT_MS } from "./ai/chat-runtime/deepseek.js";
 import { loadAIContext } from "./ai/chat-runtime/context.js";
 import { createAIMemory, deleteAIMemory, listAIMemories } from "./ai/chat-runtime/memory.js";
@@ -10,6 +10,7 @@ import { dailyInspirationOffset, dailyInspirationResponse } from "./inspiration/
 import { confirmLearningAssets, deleteLearningAsset, getLearningAsset, uploadLearningAsset } from "./learning/assets.js";
 import { normalizeLearningEntries } from "./learning/blocks.js";
 import { previewLearningLink } from "./learning/link-preview.js";
+import { checkD1RateLimit, clearD1RateLimits, clientAddress, consumeOrThrow, enforceAIQuota, rateLimitConfig } from "./security/rate-limit.js";
 
 const SESSION_SECONDS = 30 * 86400;
 const ITERATIONS = 100_000;
@@ -27,6 +28,7 @@ const cleanCategoryName = (value) => String(value || "").trim().replace(/^[。�
 const normalizeInspirationPlatform = (value) => value === "douyin" || value === "抖音" ? "douyin" : value === "xiaohongshu" || value === "小红书" ? "xiaohongshu" : "web";
 const portalForPlatform = (platform) => platform === "xiaohongshu" ? "小红书" : "抖音";
 const cleanTags = (value) => Array.isArray(value) ? [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 12) : [];
+const inspirationCoverTypes = new Set(["video_first_frame", "video_poster", "first_image", "og_image", "main_image", "fallback"]);
 
 function normalizeWorkspaceForStorage(input) {
   const categories = (Array.isArray(input?.inspirationCategories) ? input.inspirationCategories : [])
@@ -50,6 +52,8 @@ function normalizeWorkspaceForStorage(input) {
       content: title,
       cover,
       image: cover,
+      coverSource: String(item.coverSource || ""),
+      ...(inspirationCoverTypes.has(item.coverType) ? { coverType: item.coverType } : {}),
       author: String(item.author || ""),
       sourceText: String(item.sourceText || item.source_text || ""),
       categoryId,
@@ -80,6 +84,15 @@ async function passwordHash(password, salt = randomToken(18)) {
 
 async function tokenHash(token) {
   return base64url(await crypto.subtle.digest("SHA-256", encoder.encode(token)));
+}
+
+function timingSafeEqual(left, right) {
+  const a = encoder.encode(String(left || ""));
+  const b = encoder.encode(String(right || ""));
+  const length = Math.max(a.length, b.length);
+  let difference = a.length ^ b.length;
+  for (let index = 0; index < length; index += 1) difference |= (a[index] || 0) ^ (b[index] || 0);
+  return difference === 0;
 }
 
 async function readBody(request) {
@@ -147,6 +160,8 @@ async function listAIConversation(db, userId, conversationId, limit) {
 
 async function createConversationReply(db, env, userId, conversationId, message) {
   await requireAIContextAuthorization(db, userId);
+  validateAIMessage(message);
+  await enforceAIQuota(db, env, userId);
   const userCreatedAt = new Date().toISOString();
   const context = await loadAIContext({ db, userId });
   const result = await generateAIResponse({ userId, message, context, apiKey: env.DEEPSEEK_API_KEY, timeoutMs: DEEPSEEK_CHAT_TIMEOUT_MS });
@@ -199,6 +214,7 @@ export async function handleApiRequest(request, env) {
 
     if (url.pathname === "/api/auth/register" && request.method === "POST") {
       const body = await readBody(request); const email = normalizeEmail(body.email); const password = String(body.password || ""); const displayName = String(body.displayName || "").trim();
+      await consumeOrThrow(db, rateLimitConfig(env).registerIpRequests, clientAddress(request), "尝试次数过多，请稍后再试");
       if (!validEmail(email)) return json({ error: "请输入有效邮箱" }, 422);
       if (password.length < 8) return json({ error: "密码至少需要 8 位" }, 422);
       if (displayName.length < 2 || displayName.length > 30) return json({ error: "名称需要 2–30 个字符" }, 422);
@@ -216,9 +232,18 @@ export async function handleApiRequest(request, env) {
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
       const body = await readBody(request); const email = normalizeEmail(body.email); const password = String(body.password || "");
+      const config = rateLimitConfig(env); const address = clientAddress(request);
+      await checkD1RateLimit(db, config.loginIpFailures, address, "尝试次数过多，请稍后再试");
+      await checkD1RateLimit(db, config.loginAccountFailures, email, "尝试次数过多，请稍后再试");
       const record = await db.prepare("SELECT * FROM users WHERE email=?").bind(email).first();
-      const valid = record && (await passwordHash(password, record.password_salt)).hash === record.password_hash;
-      if (!valid) return json({ error: "邮箱或密码不正确" }, 401);
+      const candidateHash = record ? (await passwordHash(password, record.password_salt)).hash : (await passwordHash(password, "missing-account-placeholder")).hash;
+      const valid = Boolean(record) && timingSafeEqual(candidateHash, record?.password_hash);
+      if (!valid) {
+        await consumeOrThrow(db, config.loginIpFailures, address, "尝试次数过多，请稍后再试");
+        await consumeOrThrow(db, config.loginAccountFailures, email, "尝试次数过多，请稍后再试");
+        return json({ error: "邮箱或密码不正确" }, 401);
+      }
+      await clearD1RateLimits(db, [{ scope: config.loginAccountFailures.scope, identifier: email }]);
       const user = await db.prepare(`SELECT ${userSelect} FROM users WHERE id=?`).bind(record.id).first(); const token = await issueSession(db, record.id);
       return json({ user: publicUser(user) }, 200, { "set-cookie": cookie(token) });
     }
@@ -308,7 +333,8 @@ export async function handleApiRequest(request, env) {
       return json({ configured: Boolean(env.DEEPSEEK_API_KEY), provider: "DeepSeek", model: "deepseek-chat" });
     }
     if (url.pathname === "/api/ai/test" && request.method === "POST") {
-      await requireUser(request, db);
+      const { user } = await requireUser(request, db);
+      await enforceAIQuota(db, env, user.id);
       return json(await testDeepSeekConnection({ apiKey: env.DEEPSEEK_API_KEY }));
     }
     if (url.pathname === "/api/ai/context-authorization" && request.method === "GET") {
@@ -365,6 +391,7 @@ export async function handleApiRequest(request, env) {
       const insightDate = shanghaiDate();
       const existing = await getAIDailyInsight(db, user.id, insightDate);
       if (existing) return json({ insight: existing, cached: true });
+      await enforceAIQuota(db, env, user.id);
       const context = await loadAIContext({ db, userId: user.id });
       const result = await generateAIResponse({ userId: user.id, message: dailyInsightPrompt(), context, apiKey: env.DEEPSEEK_API_KEY, timeoutMs: DEEPSEEK_INSIGHT_TIMEOUT_MS });
       const saved = await saveAIDailyInsight(db, user.id, insightDate, parseDailyInsight(result.content));
@@ -372,6 +399,8 @@ export async function handleApiRequest(request, env) {
     }
     if (url.pathname === "/api/ai/insights" && request.method === "POST") {
       const { user } = await requireUser(request, db); const body = await readBody(request);
+      normalizeAIRequest(body);
+      await enforceAIQuota(db, env, user.id);
       const row = await db.prepare("SELECT payload_json AS payload FROM user_workspaces WHERE user_id=?").bind(user.id).first();
       const workspace = normalizeWorkspaceForStorage(row ? JSON.parse(row.payload) : emptyWorkspace);
       const insight = await generateAIReport({ body, workspace, apiKey: env.DEEPSEEK_API_KEY });
@@ -399,6 +428,9 @@ export async function handleApiRequest(request, env) {
     }
     return json({ error: "接口不存在" }, 404);
   } catch (error) {
-    console.error(error); return json({ error: error.status ? error.message : "服务暂时不可用", ...(error.code ? { code: error.code } : {}) }, error.status || 500);
+    const status = Number(error?.status) || 500;
+    if (status >= 500) console.error("Worker API request failed", { status, code: String(error?.code || "INTERNAL_ERROR") });
+    const headers = status === 429 && error.retryAfter ? { "retry-after": String(error.retryAfter) } : {};
+    return json({ error: error.status ? error.message : "服务暂时不可用", ...(error.code ? { code: error.code } : {}) }, status, headers);
   }
 }

@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, BrainCircuit, Check, Compass, Database, MessageCircle, RefreshCw, Send, ShieldCheck, Sparkles, UserRound, WandSparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { aiCoreClient, type AICoreStatus, type AIContextAuthorization, type AIConversationMessage } from "../ai/client";
+import { AICoreRequestError, aiCoreClient, type AICoreStatus, type AIContextAuthorization, type AIConversationMessage } from "../ai/client";
 import { AIMemoryPanel } from "../components/AIMemoryPanel";
 import { Panel, PanelTitle } from "../components/ui";
 import { shouldSubmitOnEnter } from "../services/ime";
+import { useWorkspaceNavigation } from "../components/workspace/WorkspaceNavigation";
 
 interface WelcomeMessage {
   id: string;
@@ -28,13 +29,24 @@ const welcomeMessage: WelcomeMessage = {
 
 const promptSuggestions = ["帮我梳理今天的优先级", "最近的状态有什么变化？", "给我一个可执行的成长建议"];
 
+function aiErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof AICoreRequestError)) return error instanceof Error ? error.message : fallback;
+  if (error.status === 429) return error.message;
+  if (error.code === "DEEPSEEK_TIMEOUT") return "DeepSeek 请求超时，请稍后再试";
+  if (error.code === "DEEPSEEK_API_ERROR" || error.code === "DEEPSEEK_NETWORK_ERROR") return "DeepSeek 暂时不可用，请稍后再试";
+  if (error.code === "D1_SAVE_FAILED") return "AI 回复已生成，但暂时没有保存成功，请重试";
+  return error.message || fallback;
+}
+
 export function AIWorkspacePage() {
+  const { params } = useWorkspaceNavigation();
+  const incomingPrompt = params.get("prompt") ?? "";
   const [activeView, setActiveView] = useState<"assistant" | "memory">("assistant");
   const [status, setStatus] = useState<AICoreStatus | null>(null);
   const [contextAuthorization, setContextAuthorization] = useState<AIContextAuthorization | null>(null);
   const [authorizationSaving, setAuthorizationSaving] = useState(false);
   const [messages, setMessages] = useState<(AIConversationMessage | WelcomeMessage)[]>([welcomeMessage]);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(incomingPrompt);
   const [isComposing, setIsComposing] = useState(false);
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -42,6 +54,9 @@ export function AIWorkspacePage() {
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightError, setInsightError] = useState("");
   const feedRef = useRef<HTMLDivElement>(null);
+  const autoSent = useRef(false);
+  const [authorizationLoaded, setAuthorizationLoaded] = useState(false);
+  const [conversationLoaded, setConversationLoaded] = useState(false);
   const contextAuthorized = contextAuthorization?.authorized ?? true;
 
   useEffect(() => {
@@ -51,13 +66,15 @@ export function AIWorkspacePage() {
       .catch(() => { if (active) setStatus(null); });
     aiCoreClient.contextAuthorization()
       .then((result) => { if (active) setContextAuthorization(result); })
-      .catch(() => { if (active) setContextAuthorization(null); });
+      .catch(() => { if (active) setContextAuthorization(null); })
+      .finally(() => { if (active) setAuthorizationLoaded(true); });
     aiCoreClient.conversation()
       .then((result) => { if (active) setMessages(result.messages.length ? result.messages : [welcomeMessage]); })
-      .catch((error) => { if (active) setChatError(error instanceof Error ? error.message : "历史对话暂时无法读取"); });
+      .catch((error) => { if (active) setChatError(aiErrorMessage(error, "历史对话暂时无法读取")); })
+      .finally(() => { if (active) setConversationLoaded(true); });
     aiCoreClient.todayInsight()
       .then((result) => { if (active) setInsight(result.insight); })
-      .catch((error) => { if (active) setInsightError(error instanceof Error ? error.message : "今日洞察暂时无法读取"); });
+      .catch((error) => { if (active) setInsightError(aiErrorMessage(error, "今日洞察暂时无法读取")); });
     return () => { active = false; };
   }, []);
 
@@ -76,7 +93,7 @@ export function AIWorkspacePage() {
       setContextAuthorization(result);
     } catch (error) {
       setContextAuthorization(previous);
-      setChatError(error instanceof Error ? error.message : "个人上下文设置保存失败");
+      setChatError(aiErrorMessage(error, "个人上下文设置保存失败"));
     } finally {
       setAuthorizationSaving(false);
     }
@@ -93,11 +110,18 @@ export function AIWorkspacePage() {
       setMessages((current) => [...current.filter((item) => item.id !== "welcome"), ...result.messages]);
     } catch (error) {
       setDraft(message);
-      setChatError(error instanceof Error ? error.message : "AI Core 暂时无法回应");
+      setChatError(aiErrorMessage(error, "AI Core 暂时无法回应"));
     } finally {
       setSending(false);
     }
   };
+
+  useEffect(() => {
+    if (!incomingPrompt || params.get("send") !== "1" || !authorizationLoaded || !conversationLoaded || autoSent.current) return;
+    autoSent.current = true;
+    window.history.replaceState({}, "", "/ai-core");
+    void sendMessage(incomingPrompt);
+  }, [authorizationLoaded, conversationLoaded, incomingPrompt, params]);
 
   const generateDailyInsight = async () => {
     if (insightLoading || !contextAuthorized || !status?.configured) return;
@@ -107,7 +131,7 @@ export function AIWorkspacePage() {
       const result = await aiCoreClient.generateTodayInsight();
       setInsight(result.insight);
     } catch (error) {
-      setInsightError(error instanceof Error ? error.message : "今日洞察生成失败");
+      setInsightError(aiErrorMessage(error, "今日洞察生成失败"));
     } finally {
       setInsightLoading(false);
     }

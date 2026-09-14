@@ -7,6 +7,7 @@ import { generateAIResponse } from "../worker/ai/service.ts";
 import { normalizeAIMemoryInput } from "../worker/ai/memory.ts";
 import { dateInTimeZone } from "../worker/ai/todoSelectors.ts";
 import { handleApiRequest } from "../worker/api.js";
+import { buildDeepSeekMessages, MAX_REPORT_CONTEXT_LENGTH } from "../worker/ai/prompts.js";
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -49,6 +50,14 @@ test("AI service validates identity and message boundaries", async () => {
   await assert.rejects(() => generateAIResponse({ ...base, message: "x".repeat(4_001) }), /4000/);
   await assert.rejects(() => generateAIResponse({ ...base, message: "hello", context: "x".repeat(12_001) }), /12000/);
   await assert.rejects(() => generateAIResponse({ ...base, userId: "", message: "hello" }), /用户身份无效/);
+});
+
+test("AI report context is capped before it reaches the provider", () => {
+  const records = Array.from({ length: 80 }, (_, index) => ({ id: index, content: "x".repeat(1_000) }));
+  const messages = buildDeepSeekMessages("weekly", { todos: records, learning: records }, ["todos", "learning"]);
+  const serializedContext = messages[1].content.split("个人数据摘要：")[1];
+  assert.ok(serializedContext.length <= MAX_REPORT_CONTEXT_LENGTH + 1);
+  assert.match(serializedContext, /…$/);
 });
 
 test("AI service builds a scoped request without exposing the account id", async () => {
@@ -159,7 +168,7 @@ test("AI context query is bound to the authenticated account", async () => {
           boundUserIds.push(userId);
           return { results: [{ id: "memory-a", memoryType: "goal", content: "A 的长期目标", importance: 5, source: "user", createdAt: "2026-07-31", updatedAt: "2026-07-31" }] };
         },
-        run: async () => ({ meta: { changes: 0 } }),
+        run: async () => ({ meta: { changes: query.includes("INSERT INTO rate_limit_buckets") ? 1 : 0 } }),
       }) };
     },
   };
@@ -307,7 +316,7 @@ test("conversation persistence performs no D1 batch before authorization and pro
           return null;
         },
         all: async () => ({ results: [] }),
-        run: async () => ({ meta: { changes: 0 } }),
+        run: async () => ({ meta: { changes: query.includes("INSERT INTO rate_limit_buckets") ? 1 : 0 } }),
       }),
     }),
     batch: async () => { batchCalls += 1; return []; },
@@ -347,7 +356,7 @@ test("conversation API reports D1 persistence failures separately", async () => 
           return null;
         },
         all: async () => ({ results: [] }),
-        run: async () => ({ meta: { changes: 0 } }),
+        run: async () => ({ meta: { changes: query.includes("INSERT INTO rate_limit_buckets") ? 1 : 0 } }),
       }),
     }),
     batch: async () => { throw new Error("D1 unavailable"); },

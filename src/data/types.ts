@@ -5,6 +5,7 @@ export type LearningCategory = "书籍" | "课程" | "技能" | "文章";
 export type EnglishCategory = "单词" | "听力" | "阅读" | "口语";
 export type InspirationPlatform = "douyin" | "xiaohongshu" | "web";
 export type InspirationPortal = "抖音" | "小红书";
+export type InspirationCoverType = "video_first_frame" | "video_poster" | "first_image" | "og_image" | "main_image" | "fallback";
 export type HabitId = "reading" | "english" | "fitness" | "writing" | "sleep";
 export type AIInsightType = "daily" | "weekly" | "monthly" | "annual" | "inspiration" | "growth";
 export type MemoryKind = "Preference" | "Interest" | "Habit" | "Goal" | "History";
@@ -132,6 +133,8 @@ export interface InspirationItem {
   portal: InspirationPortal;
   title: string;
   cover: string;
+  coverSource?: string;
+  coverType?: InspirationCoverType;
   author: string;
   sourceText: string;
   categoryName: string;

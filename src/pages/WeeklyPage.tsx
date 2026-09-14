@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, Clock3, Save, Sparkl
 import { FadeNotice, Panel, PanelTitle } from "../components/ui";
 import { weekMeta } from "../services/date";
 import { useWorkspaceStore } from "../store/workspaceStore";
+import { useWorkspaceNavigation } from "../components/workspace/WorkspaceNavigation";
 
 const fields = [
   { key: "completed" as const, title: "完成了什么", icon: CheckCircle2, placeholder: "本周完成的任务、习惯与阶段成果…" },
@@ -12,10 +13,17 @@ const fields = [
 ];
 
 export function WeeklyPage() {
+  const { params } = useWorkspaceNavigation();
   const reviews = useWorkspaceStore((state) => state.weeklyReviews);
   const ensure = useWorkspaceStore((state) => state.ensureWeeklyReview);
   const update = useWorkspaceStore((state) => state.updateWeeklyReview);
-  const [offset, setOffset] = useState(0);
+  const requestedWeek = params.get("week");
+  const [offset, setOffset] = useState(() => {
+    const target = reviews.find((item) => item.weekKey === requestedWeek);
+    if (!target) return 0;
+    const current = weekMeta();
+    return Math.round((new Date(`${target.start}T12:00:00`).getTime() - new Date(`${current.start}T12:00:00`).getTime()) / 604800000);
+  });
   const [saved, setSaved] = useState(false);
   const meta = useMemo(() => weekMeta(new Date(), offset), [offset]);
   const review = reviews.find((item) => item.weekKey === meta.weekKey);

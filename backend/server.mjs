@@ -5,12 +5,12 @@ import { fileURLToPath } from "node:url";
 import {
   confirmLearningAssets, createAIMemory, createLearningAsset, createSession, createUser, databaseInfo, deleteAIConversation, deleteAIMemory, deleteLearningAsset, deleteSession, deleteUserSessions, findSessionUser, findUserByEmail,
   getAIContextAuthorization, getAIDailyInsight, getDailyInspiration, getPasswordRecord, getPreferences, getWorkspace, listAIConversation, listAIMemories, listAIReports,
-  getLearningAsset, saveAIConversationExchange, saveAIDailyInsight, saveAIReport, savePreferences, saveWorkspace, setAIContextAuthorization, updatePassword, updateUserProfile,
+  checkRateLimitBucket, clearRateLimitBuckets, consumeRateLimitBucket, getLearningAsset, maybeCleanupRateLimitBuckets, saveAIConversationExchange, saveAIDailyInsight, saveAIReport, savePreferences, saveWorkspace, setAIContextAuthorization, updatePassword, updateUserProfile,
 } from "./database.mjs";
 import { createSessionToken, hashPassword, hashSessionToken, verifyPassword } from "./security.mjs";
-import { generateAIReport } from "../worker/ai/report-service.js";
+import { generateAIReport, normalizeAIRequest } from "../worker/ai/report-service.js";
 import { buildAIContext } from "../worker/ai/chat-runtime/context.js";
-import { generateAIResponse } from "../worker/ai/chat-runtime/service.js";
+import { generateAIResponse, validateAIMessage } from "../worker/ai/chat-runtime/service.js";
 import { DEEPSEEK_CHAT_TIMEOUT_MS, DEEPSEEK_INSIGHT_TIMEOUT_MS } from "../worker/ai/chat-runtime/deepseek.js";
 import { normalizeAIMemoryInput } from "../worker/ai/chat-runtime/memory.js";
 import { conversationMessages, dailyInsightPrompt, normalizeConversationId, normalizeConversationLimit, parseDailyInsight, shanghaiDate } from "../worker/ai/persistence.js";
@@ -18,10 +18,10 @@ import { captureInspiration } from "../worker/inspiration/capture.js";
 import { learningBlockFromRow } from "../worker/learning/assets.js";
 import { validateLearningFile, validateLearningThumbnail } from "../worker/learning/file-security.js";
 import { previewLearningLink } from "../worker/learning/link-preview.js";
+import { hashRateLimitIdentifier, rateLimitConfig, rateLimitError } from "../worker/security/rate-limit.js";
 
 const port = Number(process.env.DAZZJUN_API_PORT || 8788);
 const sessionDays = 30;
-const attempts = new Map();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const learningAssetDir = path.resolve(process.env.DAZZJUN_LEARNING_ASSET_DIR || path.join(root, ".data", "learning-assets"));
 
@@ -112,11 +112,30 @@ async function saveLocalLearningAsset(request, userId) {
   }
 }
 
-function rateLimit(key) {
-  const now = Date.now();
-  const recent = (attempts.get(key) || []).filter((time) => now - time < 10 * 60_000);
-  recent.push(now); attempts.set(key, recent);
-  if (recent.length > 12) throw Object.assign(new Error("尝试次数过多，请稍后再试"), { status: 429 });
+async function localRateLimitKey(config, identifier) {
+  return await hashRateLimitIdentifier(config.scope, identifier);
+}
+
+async function checkLocalRateLimit(config, identifier, message) {
+  const key = await localRateLimitKey(config, identifier);
+  const state = checkRateLimitBucket(config, key);
+  if (!state.allowed) throw rateLimitError(message, state.retryAfter);
+  return key;
+}
+
+async function consumeLocalRateLimit(config, identifier, message) {
+  const key = await localRateLimitKey(config, identifier);
+  const state = consumeRateLimitBucket(config, key);
+  if (!state.allowed) throw rateLimitError(message, state.retryAfter);
+  try { maybeCleanupRateLimitBuckets(key); }
+  catch (error) { console.warn("Rate-limit cleanup skipped", error); }
+  return key;
+}
+
+async function enforceLocalAIQuota(userId) {
+  const config = rateLimitConfig(process.env);
+  await consumeLocalRateLimit(config.aiPerMinute, userId, "请求太频繁，请稍后再试");
+  await consumeLocalRateLimit(config.aiPerDay, userId, "今天的 AI 使用额度已达到上限");
 }
 
 function currentSession(request) {
@@ -144,6 +163,8 @@ function requireAIContextAuthorization(userId) {
 
 async function createConversationReply(userId, conversationId, message) {
   requireAIContextAuthorization(userId);
+  validateAIMessage(message);
+  await enforceLocalAIQuota(userId);
   const userCreatedAt = new Date().toISOString();
   const { data } = getWorkspace(userId);
   const result = await generateAIResponse({
@@ -175,7 +196,7 @@ async function route(request, response) {
 
   if (url.pathname === "/api/auth/register" && request.method === "POST") {
     const body = await readBody(request); const email = normalizeEmail(body.email); const password = String(body.password || ""); const displayName = String(body.displayName || "").trim();
-    rateLimit(`register:${request.socket.remoteAddress}:${email}`);
+    await consumeLocalRateLimit(rateLimitConfig(process.env).registerIpRequests, request.socket.remoteAddress || "unknown", "尝试次数过多，请稍后再试");
     if (!validEmail(email)) return json(response, 422, { error: "请输入有效邮箱" });
     if (password.length < 8) return json(response, 422, { error: "密码至少需要 8 位" });
     if (displayName.length < 2 || displayName.length > 30) return json(response, 422, { error: "名称需要 2–30 个字符" });
@@ -188,9 +209,16 @@ async function route(request, response) {
 
   if (url.pathname === "/api/auth/login" && request.method === "POST") {
     const body = await readBody(request); const email = normalizeEmail(body.email); const password = String(body.password || "");
-    rateLimit(`login:${request.socket.remoteAddress}:${email}`);
+    const config = rateLimitConfig(process.env); const address = request.socket.remoteAddress || "unknown";
+    await checkLocalRateLimit(config.loginIpFailures, address, "尝试次数过多，请稍后再试");
+    const accountKey = await checkLocalRateLimit(config.loginAccountFailures, email, "尝试次数过多，请稍后再试");
     const record = findUserByEmail(email);
-    if (!record || !verifyPassword(password, record.password_salt, record.password_hash)) return json(response, 401, { error: "邮箱或密码不正确" });
+    if (!record || !verifyPassword(password, record.password_salt, record.password_hash)) {
+      await consumeLocalRateLimit(config.loginIpFailures, address, "尝试次数过多，请稍后再试");
+      await consumeLocalRateLimit(config.loginAccountFailures, email, "尝试次数过多，请稍后再试");
+      return json(response, 401, { error: "邮箱或密码不正确" });
+    }
+    clearRateLimitBuckets([{ scope: config.loginAccountFailures.scope, key: accountKey }]);
     const token = issueSession(record.id);
     return json(response, 200, { user: safeUser({ ...record, displayName: record.display_name, avatarUrl: record.avatar_url, createdAt: record.created_at, updatedAt: record.updated_at }) }, { "set-cookie": sessionCookie(token) });
   }
@@ -328,6 +356,7 @@ async function route(request, response) {
     const insightDate = shanghaiDate();
     const existing = getAIDailyInsight(user.id, insightDate);
     if (existing) return json(response, 200, { insight: existing, cached: true });
+    await enforceLocalAIQuota(user.id);
     const { data } = getWorkspace(user.id);
     const result = await generateAIResponse({ userId: user.id, message: dailyInsightPrompt(), context: buildAIContext(data, new Date(), listAIMemories(user.id, 60)), apiKey: process.env.DEEPSEEK_API_KEY, endpoint: process.env.DEEPSEEK_API_ENDPOINT, timeoutMs: DEEPSEEK_INSIGHT_TIMEOUT_MS });
     let saved;
@@ -337,6 +366,8 @@ async function route(request, response) {
   }
   if (url.pathname === "/api/ai/insights" && request.method === "POST") {
     const { user } = requireUser(request); const body = await readBody(request);
+    normalizeAIRequest(body);
+    await enforceLocalAIQuota(user.id);
     const { data } = getWorkspace(user.id);
     const insight = await generateAIReport({ body, workspace: data, apiKey: process.env.DEEPSEEK_API_KEY, endpoint: process.env.DEEPSEEK_API_ENDPOINT });
     return json(response, 201, { insight: saveAIReport(user.id, insight) });
@@ -353,7 +384,8 @@ async function route(request, response) {
 
 const server = http.createServer((request, response) => route(request, response).catch((error) => {
   console.error(error);
-  json(response, error.status || 500, { error: error.status ? error.message : "服务暂时不可用", ...(error.code ? { code: error.code } : {}) });
+  const headers = error.status === 429 && error.retryAfter ? { "retry-after": String(error.retryAfter) } : {};
+  json(response, error.status || 500, { error: error.status ? error.message : "服务暂时不可用", ...(error.code ? { code: error.code } : {}) }, headers);
 }));
 
 server.listen(port, "127.0.0.1", () => console.log(`Dazzjun API listening on http://127.0.0.1:${port}`));

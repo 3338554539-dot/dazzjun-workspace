@@ -5,10 +5,7 @@ const platformNames = {
 };
 
 const clean = (value) => String(value || "").trim();
-const realCover = (value) => {
-  const cover = clean(value);
-  return /^\/assets\/inspiration-(?:ribbons|sea)\.png$/u.test(cover) ? "" : cover;
-};
+const coverValue = (value) => clean(value);
 
 function platformFor(value) {
   const platform = clean(value).toLowerCase();
@@ -51,11 +48,11 @@ export function dailyInspirationResponse(row, userId) {
   if (!row) return null;
   const storedId = clean(row.id);
   const prefix = `${clean(userId)}:`;
-  const legacyImage = realCover(row.image);
+  const legacyImage = coverValue(row.image);
   return {
     id: storedId.startsWith(prefix) ? storedId.slice(prefix.length) : storedId,
     title: clean(row.title || row.content) || "未命名灵感",
-    cover: realCover(row.cover) || legacyImage,
+    cover: coverValue(row.cover) || legacyImage,
     image: legacyImage,
     platform: platformFor(row.platform),
     category_name: clean(row.categoryName || row.category_name) || "未分类",

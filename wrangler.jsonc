@@ -13,13 +13,8 @@
     {
       "binding": "DB",
       "database_name": "dazzjun-workspace-v61",
-      "database_id": "bafb5750-707d-4084-9fe5-725c09a30de8"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "LEARNING_ASSETS",
-      "bucket_name": "dazzjun-learning-assets"
+      "database_id": "bafb5750-707d-4084-9fe5-725c09a30de8",
+      "migrations_dir": "database/migrations"
     }
   ],
   "observability": {

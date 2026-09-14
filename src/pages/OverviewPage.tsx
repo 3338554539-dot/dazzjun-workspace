@@ -1,78 +1,75 @@
-import { ArrowRight, BookOpen, Check, CheckCircle2, Dumbbell, Flame, Heart, Languages, Lightbulb, Sparkles, Target } from "lucide-react";
-import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
-import { inspirationApi, type DailyInspiration } from "../api/client";
+import { ArrowRight, BookOpen, BrainCircuit, CheckCircle2, Dumbbell, Heart, Languages, Lightbulb, PenLine, Plus, Send, Sparkles, SquareCheckBig, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useMemo, useState } from "react";
+import { useAuth } from "../auth";
 import { GrowthRings, HabitTracker, YearOverview } from "../components/GrowthDashboard";
-import { CountUp, Panel, PanelTitle } from "../components/ui";
+import type { PageKey } from "../components/Shell";
+import { WorkspaceEmptyState } from "../components/workspace/GrowthUI";
+import { useWorkspaceNavigation, type WorkspaceNavigationOptions } from "../components/workspace/WorkspaceNavigation";
 import { useWorkspaceStats } from "../hooks/useWorkspaceStats";
-import { getGreeting } from "../services/date";
-import { inspirationCoverCandidates, inspirationSourceLabel } from "../services/inspirationLibrary";
+import { getGreeting, isBetween, todayISO } from "../services/date";
+import { shouldSubmitOnEnter } from "../services/ime";
+import { useWorkspaceStore } from "../store/workspaceStore";
+import { useWorkspaceTheme } from "../theme";
 
-function DailyInspirationCover({ inspiration }: { inspiration: DailyInspiration }) {
-  const [coverIndex, setCoverIndex] = useState(0);
-  const candidates = inspirationCoverCandidates(inspiration, false);
-  if (!candidates[coverIndex]) return <div className="inspiration-cover-empty"><Lightbulb size={26}/></div>;
-  return <img src={candidates[coverIndex]} alt={inspiration.title} onError={() => setCoverIndex((current) => current + 1)}/>;
-}
+const pageMotion = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } };
+type QuickAction = { label: string; detail: string; icon: typeof Plus; page: PageKey; options: WorkspaceNavigationOptions };
 
 export function OverviewPage() {
-  const [dailyInspiration, setDailyInspiration] = useState<DailyInspiration | null>();
+  const { user } = useAuth();
+  const { navigate } = useWorkspaceNavigation();
+  const theme = useWorkspaceTheme();
   const stats = useWorkspaceStats();
-  const { todayTodo, learningMinutes, englishMinutes, fitness: fitnessStats, latestMood: mood, goals, growth } = stats;
-  const streak = stats.englishStreak;
-  const todayTasks = stats.todayTasks.slice(0, 5);
-  const todayLabel = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "long" }).format(new Date()).replaceAll("/", ".");
-  const currentStatus = stats.moodToday ? `${stats.moodToday.mood} · ${stats.moodToday.score}分` : growth.overall >= 70 ? "节奏很好" : growth.overall >= 40 ? "专注进行中" : "慢慢进入状态";
-
-  useEffect(() => {
-    let active = true;
-    inspirationApi.random()
-      .then((inspiration) => { if (active) setDailyInspiration(inspiration); })
-      .catch(() => { if (active) setDailyInspiration(null); });
-    return () => { active = false; };
-  }, []);
-
-  const statusCards = [
-    { label: "学习状态", value: `${learningMinutes} min`, meta: `本周目标 ${goals.weeklyLearningMinutes} min`, icon: BookOpen },
-    { label: "英语状态", value: `${streak} 天`, meta: `本周 ${englishMinutes} 分钟`, icon: Languages },
-    { label: "健身状态", value: `${fitnessStats.sessions} 次`, meta: `${fitnessStats.calories} kcal`, icon: Dumbbell },
-    { label: "情绪状态", value: mood?.mood ?? "待记录", meta: mood ? `${mood.date} · ${mood.score} 分` : "今天写下感受", icon: Heart },
+  const workspace = useWorkspaceStore();
+  const [assistantDraft, setAssistantDraft] = useState("");
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const today = todayISO();
+  const todayLabel = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date());
+  const metrics = [
+    { label: "今日任务", value: `${stats.todayTodo.done}/${stats.todayTodo.total}`, meta: `${stats.todayTodo.progress}% 完成`, icon: SquareCheckBig, tone: "violet", page: "todo" as const, options: { filter: "today" } },
+    { label: "本周学习", value: `${stats.learningMinutes}`, unit: "min", meta: `目标 ${stats.goals.weeklyLearningMinutes}`, icon: BookOpen, tone: "cyan", page: "learning" as const, options: { filter: "week" } },
+    { label: "今日心情", value: stats.moodToday?.mood ?? "待记录", meta: stats.moodToday ? `${stats.moodToday.score} 分状态` : "写下此刻感受", icon: Heart, tone: "warm", page: "mood" as const, options: stats.moodToday ? { recordId: stats.moodToday.id, date: stats.moodToday.date } : { mode: "new", date: today } },
+    { label: "本周运动", value: `${stats.fitness.sessions}`, unit: "次", meta: `${stats.fitness.calories} kcal`, icon: Dumbbell, tone: "green", page: "fitness" as const, options: { filter: "week" } },
+    { label: "灵感收藏", value: `${stats.inspirationSaved}`, meta: `今日 +${stats.inspirationToday}`, icon: Lightbulb, tone: "yellow", page: "inspiration" as const, options: { filter: "all" } },
+    { label: "本周复盘", value: `${stats.reviewCompletion}/4`, meta: `第 ${stats.currentWeek.weekNumber} 周`, icon: CheckCircle2, tone: "blue", page: "weekly" as const, options: { week: stats.currentWeek.weekKey } },
   ];
+  const recentRecords = useMemo(() => [
+    ...workspace.learning.map((item) => ({ id: item.id, title: item.title, module: "学习", date: item.createdAt, page: "learning" as const, options: { recordId: item.id } })),
+    ...workspace.moods.map((item) => ({ id: item.id, title: `${item.mood} · ${item.story || item.note || "心情记录"}`, module: "心情", date: item.updatedAt, page: "mood" as const, options: { recordId: item.id, date: item.date } })),
+    ...workspace.fitness.map((item) => ({ id: item.id, title: item.title, module: "健身", date: item.createdAt, page: "fitness" as const, options: { recordId: item.id } })),
+    ...workspace.inspirations.map((item) => ({ id: item.id, title: item.title, module: "灵感", date: item.createdAt, page: "inspiration" as const, options: { recordId: item.id } })),
+    ...workspace.english.map((item) => ({ id: item.id, title: item.categories.join(" · ") || "英语练习", module: "英语", date: item.updatedAt, page: "english" as const, options: { recordId: item.id } })),
+  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5), [workspace.learning, workspace.moods, workspace.fitness, workspace.inspirations, workspace.english]);
+  const weeklyFocus = workspace.todos.filter((item) => !item.done && isBetween(item.scheduleDate, stats.currentWeek.start, stats.currentWeek.end)).sort((a, b) => Number(b.priority === "高") - Number(a.priority === "高") || a.scheduleDate.localeCompare(b.scheduleDate)).slice(0, 3);
+  const quickActions: QuickAction[] = [
+    { label: "新任务", detail: "安排今天要推进的事", icon: SquareCheckBig, page: "todo", options: { filter: "today", mode: "new" } },
+    { label: "记录心情", detail: "留住此刻状态", icon: Heart, page: "mood", options: { mode: "new", date: today } },
+    { label: "学习日志", detail: "沉淀知识与附件", icon: BookOpen, page: "learning", options: { mode: "new" } },
+    { label: "收藏灵感", detail: "快速保存一个想法", icon: PenLine, page: "inspiration", options: { mode: "capture" } },
+    { label: "英语打卡", detail: "延续学习节奏", icon: Languages, page: "english", options: { mode: "new" } },
+    { label: "记录运动", detail: "开始一次新训练", icon: Dumbbell, page: "fitness", options: { mode: "new" } },
+  ];
+  const openQuickAction = (action: QuickAction) => { setQuickCreateOpen(false); navigate(action.page, action.options); };
+  const openAI = (prompt = assistantDraft) => { const clean = prompt.trim(); navigate("ai", clean ? { prompt: clean, send: "1" } : undefined); };
 
-  return (
-    <div className="dashboard-v3">
-      <motion.section className="today-status" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-        <div><span>TODAY · PERSONAL DASHBOARD</span><h1>{getGreeting()}</h1><p>{todayLabel}</p></div>
-        <div className="today-completion"><span>今天完成</span><strong><CountUp value={growth.overall}/><small>%</small></strong><i>{currentStatus}</i></div>
-        <Sparkles className="today-spark" size={22}/>
-      </motion.section>
-
-      <div className="dashboard-main page-grid">
-        <Panel className="dashboard-progress-card growth-center-card">
-          <PanelTitle icon={Target} action={<span className="live-badge">LIVE DATA</span>}>个人成长环</PanelTitle>
-          <GrowthRings values={growth}/>
-        </Panel>
-        <Panel className="today-plan-card">
-          <PanelTitle icon={CheckCircle2} action={<button className="text-action">查看任务 <ArrowRight size={15}/></button>}>今日计划</PanelTitle>
-          <div className="mini-task-list">{todayTasks.length ? todayTasks.map((task) => <div key={task.id}><span className={`mini-check ${task.done ? "checked" : ""}`}>{task.done ? <Check size={13}/> : null}</span><strong>{task.title} · {task.category} · {task.priority}优先</strong><time>{task.startAt.slice(11,16)}–{task.deadline.slice(11,16)}</time></div>) : <p className="empty-inline">今天还没有任务</p>}</div>
-          <div className="dashboard-goal-line"><span style={{ width: `${growth.task}%` }}/></div>
-          <small className="dashboard-caption">今日任务完成度 {growth.task}% · 今日任务 {todayTodo.done}/{todayTodo.total}</small>
-        </Panel>
-        <Panel className="inspiration-moment">
-          <PanelTitle icon={Lightbulb} action={<span className="muted-label">收藏 {stats.inspirationSaved} · 今日新增 {stats.inspirationToday}</span>}>灵感时刻</PanelTitle>
-          {dailyInspiration === undefined ? <div className="inspiration-moment-skeleton" aria-label="正在加载今日灵感"/> : dailyInspiration ? <>
-            <DailyInspirationCover key={dailyInspiration.id} inspiration={dailyInspiration}/>
-            <div className="inspiration-moment-copy"><strong>{dailyInspiration.title}</strong><span>来源：{inspirationSourceLabel(dailyInspiration.platform)} · {dailyInspiration.category_name}</span></div>
-          </> : <div className="inspiration-moment-empty"><Lightbulb size={25}/><strong>暂无灵感</strong><span>去灵感库添加第一条</span></div>}
-        </Panel>
-      </div>
-
-      <div className="status-card-grid">{statusCards.map((card, index) => <motion.article whileHover={{ y: -5 }} whileTap={{ scale: .985 }} transition={{ duration: .25 }} className="status-card" key={card.label}><card.icon size={19}/><div><small>{card.label}</small><strong>{card.value}</strong><span>{card.meta}</span></div><i>{String(index + 1).padStart(2,"0")}</i></motion.article>)}</div>
-
-      <HabitTracker streaks={stats.habitStreaks}/>
-      <YearOverview data={stats.year}/>
-
-      <Panel className="habit-strip"><PanelTitle icon={Target}>阶段目标联动</PanelTitle><div className="habit-items"><span><b>{streak}</b>英语连续天数</span><span><b>{fitnessStats.sessions}/{goals.weeklyFitnessSessions}</b>本周健身</span><span><b>{learningMinutes}/{goals.weeklyLearningMinutes}</b>学习分钟</span><span><b>{stats.inspirationMonth}/{goals.monthlyInspirationTarget}</b>本月灵感</span></div></Panel>
-    </div>
-  );
+  return <div className="os-overview">
+    <motion.section className="os-overview-hero" {...pageMotion}>
+      <img src={theme.wallpaper} alt={theme.heroAlt}/><div className="os-hero-shade"/>
+      <div className="os-hero-copy"><small>PERSONAL DASHBOARD</small><h2>{getGreeting().replace("Dazzjun", user?.displayName ?? "Dazzjun")}</h2><p>{todayLabel}</p><button className="os-hero-start" onClick={() => setQuickCreateOpen(true)}><Sparkles size={14}/>从一件小事开始<ArrowRight size={13}/></button></div>
+      <div className="os-hero-progress"><small>今日完成</small><strong>{stats.todayTodo.progress}<i>%</i></strong><span>{stats.todayTodo.total ? `完成 ${stats.todayTodo.done} 项，剩余 ${stats.todayTodo.pending} 项` : "今天还没有安排任务"}</span></div>
+    </motion.section>
+    <section className="os-metric-grid" aria-label="个人状态指标">{metrics.map((item, index) => <motion.button key={item.label} className={`os-metric-card tone-${item.tone}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .035 }} whileHover={{ y: -2 }} onClick={() => navigate(item.page, item.options)} aria-label={`打开${item.label}`}><ArrowRight className="os-metric-arrow" size={13}/><span><item.icon size={17}/>{item.label}</span><strong>{item.value}{item.unit && <i>{item.unit}</i>}</strong><small>{item.meta}</small></motion.button>)}</section>
+    <motion.section className="os-ai-bridge" {...pageMotion} transition={{ delay: .08 }}>
+      <div className="os-ai-heading"><span><BrainCircuit size={20}/></span><div><small>DAZZJUN AI ASSISTANT</small><h3>今天想让 AI 和你一起处理什么？</h3></div><i>CONTEXT READY</i></div>
+      <div className="os-ai-input"><Sparkles size={17}/><input value={assistantDraft} onChange={(event) => setAssistantDraft(event.target.value)} onKeyDown={(event) => { if (shouldSubmitOnEnter(event.nativeEvent)) openAI(); }} placeholder="总结今天、梳理任务，或给我一个成长建议…"/><button onClick={() => openAI()} aria-label="发送到 AI Core"><Send size={16}/></button></div>
+      <div className="os-ai-quick"><button onClick={() => openAI("请总结我今天的状态，并给出一个清晰的下一步建议。")}>总结今日状态</button><button onClick={() => openAI("请根据我今天和本周的任务，帮我梳理优先级。")}>梳理优先任务</button><button onClick={() => openAI("请根据我近期的学习记录，生成一份可执行的学习建议。")}>生成学习建议</button></div>
+    </motion.section>
+    <section className="os-home-columns">
+      <article className="os-home-panel"><header><span>最近记录</span><button onClick={() => setQuickCreateOpen(true)}>开始记录 <Plus size={13}/></button></header><div className="os-recent-list">{recentRecords.length ? recentRecords.map((item) => <button key={`${item.page}-${item.id}`} onClick={() => navigate(item.page, item.options)}><i>{item.module.slice(0,1)}</i><span><strong>{item.title}</strong><small>{item.module} · {item.date.slice(0,10)}</small></span><ArrowRight size={13}/></button>) : <WorkspaceEmptyState icon={Sparkles} title="还没有最近记录" description="第一条记录会成为成长轨迹的起点。" action="开始第一条记录" onAction={() => setQuickCreateOpen(true)}/>}</div></article>
+      <article className="os-home-panel"><header><span>本周聚焦</span><button onClick={() => navigate("todo", { filter: "week" })}>查看全部 <ArrowRight size={13}/></button></header><div className="os-focus-list">{weeklyFocus.length ? weeklyFocus.map((item, index) => <button key={item.id} onClick={() => navigate("todo", { filter: "week", taskId: item.id })}><i>{String(index + 1).padStart(2,"0")}</i><span><strong>{item.title}</strong><small>{item.scheduleDate.slice(5)} · {item.category} · {item.priority}优先</small></span></button>) : <WorkspaceEmptyState icon={SquareCheckBig} title="本周暂无聚焦任务" description="给这一周安排一件真正重要的事。" action="创建本周任务" onAction={() => navigate("todo", { filter: "week", mode: "new" })}/>}</div></article>
+      <article className="os-home-panel os-quick-record"><header><span>快速记录</span><small>CAPTURE</small></header><div>{quickActions.slice(1).map((action) => <button key={action.label} onClick={() => openQuickAction(action)}><action.icon size={18}/><span>{action.label}<small>{action.detail}</small></span></button>)}</div></article>
+    </section>
+    <details className="os-longterm-data"><summary>查看长期成长数据</summary><div><GrowthRings values={stats.growth}/><HabitTracker streaks={stats.habitStreaks}/><YearOverview data={stats.year}/></div></details>
+    <AnimatePresence>{quickCreateOpen && <motion.div className="os-quick-create-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.target === event.currentTarget) setQuickCreateOpen(false); }}><motion.aside className="os-quick-create" initial={{ x: 28, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 18, opacity: 0 }}><header><div><small>QUICK CREATE</small><h2>从一件小事开始</h2></div><button onClick={() => setQuickCreateOpen(false)} aria-label="关闭快捷创建"><X size={17}/></button></header><div>{quickActions.map((action) => <button key={action.label} onClick={() => openQuickAction(action)}><action.icon size={19}/><span><strong>{action.label}</strong><small>{action.detail}</small></span><ArrowRight size={14}/></button>)}</div></motion.aside></motion.div>}</AnimatePresence>
+  </div>;
 }
