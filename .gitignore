@@ -19,6 +19,8 @@ playwright-report/
 test-results/
 qa-artifacts/
 PUBLIC_READINESS_*.md
+/design-qa.md
+/phase2-qa.md
 tmp/
 temp/
 uploads/
