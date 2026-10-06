@@ -8,7 +8,6 @@ import {
   Download,
   Dumbbell,
   Heart,
-  Languages,
   Lightbulb,
   PenLine,
   Play,
@@ -43,9 +42,9 @@ import { todoTimingFromStart } from "../services/todoSelectors";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import { applyPWAUpdate } from "../pwa/update";
 
-export type PageKey = "overview" | "todo" | "mood" | "learning" | "english" | "fitness" | "weekly" | "inspiration" | "ai";
+export type PageKey = "overview" | "todo" | "mood" | "learning" | "fitness" | "weekly" | "inspiration" | "ai";
 
-const resultIcons: Record<SearchTarget, typeof SquareCheckBig> = { todo: SquareCheckBig, mood: Heart, learning: BookOpen, english: Languages, fitness: Dumbbell, weekly: Brain, inspiration: Lightbulb, ai: BrainCircuit };
+const resultIcons: Record<SearchTarget, typeof SquareCheckBig> = { todo: SquareCheckBig, mood: Heart, learning: BookOpen, fitness: Dumbbell, weekly: Brain, inspiration: Lightbulb, ai: BrainCircuit };
 
 export function WorkspaceShell({ active, onNavigate, locationKey, children }: { active: PageKey; onNavigate: WorkspaceNavigate; locationKey: string; children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -68,7 +67,6 @@ export function WorkspaceShell({ active, onNavigate, locationKey, children }: { 
     { id: "todo", label: "To Do List", status: `进行中 ${stats.todo.pending}`, icon: SquareCheckBig },
     { id: "mood", label: "心情日记", status: stats.moodToday ? "今日已记录" : "今日待记录", icon: Heart },
     { id: "learning", label: "学习日志", status: `本周 ${stats.learningMinutes}m`, icon: BookOpen },
-    { id: "english", label: "英语学习", status: `连续打卡 ${stats.englishStreak} 天`, icon: Languages },
     { id: "fitness", label: "健身锻炼", status: `本周 ${stats.fitness.sessions} 次`, icon: Dumbbell },
     { id: "weekly", label: "周复盘", status: `第 ${stats.currentWeek.weekNumber} 周 · ${stats.reviewCompletion}/4`, icon: Brain },
     { id: "inspiration", label: "灵感库", status: `收藏 ${stats.inspirationSaved} · 今日 +${stats.inspirationToday}`, icon: Lightbulb },
@@ -134,7 +132,7 @@ export function WorkspaceShell({ active, onNavigate, locationKey, children }: { 
     setPwaUpdating(true);
     await applyPWAUpdate();
   };
-  const hasContextRail = active === "overview" || active === "todo" || active === "mood" || active === "learning" || active === "english" || active === "fitness";
+  const hasContextRail = active === "overview" || active === "todo" || active === "mood" || active === "learning" || active === "fitness";
 
   return (
     <div className="app-stage">
@@ -165,7 +163,7 @@ export function WorkspaceShell({ active, onNavigate, locationKey, children }: { 
             <div className="command-input"><Search size={18}/><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务、日记、学习、健身、复盘或灵感..."/><kbd>ESC</kbd></div>
             {!query && <><div className="quick-actions"><button onClick={() => setQuickTaskOpen(!quickTaskOpen)}><Plus size={17}/><span>新增任务<small>直接写入今日清单</small></span></button><button onClick={() => go("mood")}><Smile size={17}/><span>记录心情<small>留住今日状态</small></span></button><button onClick={() => go("inspiration")}><PenLine size={17}/><span>添加灵感<small>进入创意数据库</small></span></button><button onClick={() => go("learning")}><Play size={17}/><span>开始学习<small>记录专注时间</small></span></button><button className="ai-quick" onClick={() => go("ai")}><BrainCircuit size={17}/><span>调用 AI<small>总结、连接与建议</small></span></button></div>{quickTaskOpen && <motion.div className="quick-task-entry" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}><SquareCheckBig size={17}/><input autoFocus value={quickTask} onChange={(event) => setQuickTask(event.target.value)} onKeyDown={(event) => { if (shouldSubmitOnEnter(event.nativeEvent)) saveQuickTask(); }} placeholder="输入任务，按 Enter 保存"/><button onClick={saveQuickTask}>添加</button></motion.div>}</>}
             <div className="command-results advanced">{query ? results.length ? results.map((item) => { const Icon = resultIcons[item.page]; return <button key={item.id} onClick={() => go(item.page)}><Icon size={18}/><span><strong>{item.title}</strong><small>{item.module} · {item.detail}</small></span><ArrowUpRight size={14}/></button>; }) : <div className="command-empty">没有找到与“{query}”相关的个人记录</div> : <div className="command-hint"><BrainCircuit size={17}/><span><strong>Dazzjun AI Core 已启用</strong><small>可生成每日、每周、月度与年度成长报告</small></span></div>}</div>
-            <footer><div><button onClick={() => exportWorkspaceBackup(workspaceData)}><Download size={14}/>完整导出</button><button onClick={() => backupInput.current?.click()}><Upload size={14}/>恢复备份</button></div><span>搜索覆盖七大成长模块</span></footer>
+            <footer><div><button onClick={() => exportWorkspaceBackup(workspaceData)}><Download size={14}/>完整导出</button><button onClick={() => backupInput.current?.click()}><Upload size={14}/>恢复备份</button></div><span>搜索覆盖六大成长模块</span></footer>
           </motion.div>
         </motion.div>}
       </AnimatePresence>

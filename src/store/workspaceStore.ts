@@ -10,7 +10,7 @@ type WorkspaceActions = {
   toggleTodo: (id: string) => void;
   deleteTodo: (id: string) => void;
   clearCompletedTodos: () => void;
-  upsertMood: (entry: Omit<MoodEntry, "id" | "updatedAt">) => void;
+  upsertMood: (entry: Omit<MoodEntry, "id" | "createdAt" | "updatedAt">) => void;
   addLearning: (entry: Omit<LearningEntry, "createdAt">) => void;
   upsertEnglish: (entry: Omit<EnglishEntry, "id" | "updatedAt">) => void;
   addFitness: (entry: Omit<FitnessEntry, "id" | "createdAt">) => void;
@@ -64,7 +64,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       clearCompletedTodos: () => set((state) => ({ todos: state.todos.filter((todo) => !todo.done) })),
       upsertMood: (entry) => set((state) => {
         const existing = state.moods.find((mood) => mood.date === entry.date);
-        const next = { ...entry, id: existing?.id ?? crypto.randomUUID(), updatedAt: new Date().toISOString() };
+        const timestamp = new Date().toISOString();
+        const next = { ...entry, id: existing?.id ?? crypto.randomUUID(), createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp };
         return { moods: existing ? state.moods.map((mood) => mood.id === existing.id ? next : mood) : [...state.moods, next] };
       }),
       addLearning: (entry) => set((state) => {

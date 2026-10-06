@@ -48,7 +48,7 @@ function NavButton({ active, collapsed, icon: Icon, label, status, onClick }: {
 }
 
 export function Sidebar({ active, collapsed, displayName, items, onNavigate, onSearch, onSettings, onAccount, onToggle }: SidebarProps) {
-  const workItems = items.filter((item) => ["todo", "mood", "learning", "english", "fitness"].includes(item.id));
+  const workItems = items.filter((item) => ["todo", "mood", "learning", "fitness"].includes(item.id));
   const knowledgeItems = ["inspiration", "weekly"].map((id) => items.find((item) => item.id === id)).filter((item): item is WorkspaceNavItem => Boolean(item));
 
   return (

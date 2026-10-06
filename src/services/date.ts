@@ -9,6 +9,16 @@ export function todayISO() {
   return toISODate(new Date());
 }
 
+export function shiftISODate(iso: string, days: number) {
+  const date = new Date(`${iso}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return toISODate(date);
+}
+
+export function yesterdayISO(today = todayISO()) {
+  return shiftISODate(today, -1);
+}
+
 export function displayDate(iso: string) {
   const [year, month, day] = iso.split("-");
   return `${year}年${Number(month)}月${Number(day)}日`;

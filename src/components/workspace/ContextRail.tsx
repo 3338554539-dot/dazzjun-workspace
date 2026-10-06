@@ -1,13 +1,12 @@
-import { ArrowRight, BarChart3, BookOpen, BrainCircuit, CalendarDays, Check, ChevronRight, Dumbbell, Flame, Languages, Lightbulb, Quote, Sparkles, Target, Timer, TrendingUp } from "lucide-react";
+import { ArrowRight, BarChart3, BookOpen, BrainCircuit, CalendarDays, Check, ChevronRight, Dumbbell, Flame, Lightbulb, Quote, Sparkles, Target, Timer, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { inspirationApi, type DailyInspiration } from "../../api/client";
 import { useWorkspaceStats } from "../../hooks/useWorkspaceStats";
 import { inspirationCoverCandidates, inspirationSourceLabel } from "../../services/inspirationLibrary";
-import { todayISO } from "../../services/date";
+import { isBetween, todayISO, weekMeta } from "../../services/date";
 import { fitnessGrowthStats, learningGrowthStats, moodGrowthStats } from "../../services/growthModules";
 import { learningBlocksForEntry } from "../../services/learningBlocks";
-import { englishMinutesThisWeek, englishStreak } from "../../services/analytics";
 import { useWorkspaceStore } from "../../store/workspaceStore";
 import { RailCTA } from "./GrowthUI";
 import type { PageKey } from "../Shell";
@@ -59,7 +58,6 @@ export function ContextRail({ active, collapsed, onCollapse, onNavigate }: {
   const stats = useWorkspaceStats();
   const moods = useWorkspaceStore((state) => state.moods);
   const learning = useWorkspaceStore((state) => state.learning);
-  const english = useWorkspaceStore((state) => state.english);
   const fitness = useWorkspaceStore((state) => state.fitness);
   const goals = useWorkspaceStore((state) => state.goals);
   const today = todayISO();
@@ -75,7 +73,7 @@ export function ContextRail({ active, collapsed, onCollapse, onNavigate }: {
     });
     return buckets;
   }, [todayTasks]);
-  const growthPages = ["mood", "learning", "english", "fitness"] as const;
+  const growthPages = ["mood", "learning", "fitness"] as const;
   if (collapsed || (active !== "overview" && active !== "todo" && !growthPages.includes(active as typeof growthPages[number]))) return null;
   return (
     <motion.aside className="os-context-rail" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}>
@@ -94,16 +92,15 @@ export function ContextRail({ active, collapsed, onCollapse, onNavigate }: {
           <p><i style={{ width: `${stats.todayTodo.progress}%` }}/></p><small>今日完成 {stats.todayTodo.done}/{stats.todayTodo.total}</small>
         </section>
         <section className="os-rail-card os-focus-card"><header><span><Quote size={16}/>优先提醒</span></header><strong>{highPriority[0]?.title ?? "今天保持清晰节奏"}</strong><p>{highPriority.length ? `还有 ${highPriority.length} 个高优先级任务等待处理。` : "没有高优先级阻塞，按计划推进即可。"}</p></section>
-      </> : <GrowthRailContent active={active} moods={moods} learning={learning} english={english} fitness={fitness} goals={goals} onNavigate={onNavigate}/>}
+      </> : <GrowthRailContent active={active} moods={moods} learning={learning} fitness={fitness} goals={goals} onNavigate={onNavigate}/>}
     </motion.aside>
   );
 }
 
-function GrowthRailContent({ active, moods, learning, english, fitness, goals, onNavigate }: {
+function GrowthRailContent({ active, moods, learning, fitness, goals, onNavigate }: {
   active: PageKey;
   moods: ReturnType<typeof useWorkspaceStore.getState>["moods"];
   learning: ReturnType<typeof useWorkspaceStore.getState>["learning"];
-  english: ReturnType<typeof useWorkspaceStore.getState>["english"];
   fitness: ReturnType<typeof useWorkspaceStore.getState>["fitness"];
   goals: ReturnType<typeof useWorkspaceStore.getState>["goals"];
   onNavigate: WorkspaceNavigate;
@@ -115,7 +112,8 @@ function GrowthRailContent({ active, moods, learning, english, fitness, goals, o
       const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
       return moods.find((entry) => entry.date === iso)?.score ?? 0;
     });
-    const keywords = moods.slice(-7).flatMap((entry) => `${entry.story} ${entry.note}`.split(/[，。！？、\s]+/u)).filter((word) => word.length >= 2).slice(0, 6);
+    const week = weekMeta(todayISO());
+    const keywords = moods.filter((entry) => isBetween(entry.date, week.start, week.end)).sort((a, b) => b.date.localeCompare(a.date)).flatMap((entry) => `${entry.story} ${entry.note}`.split(/[，。！？、\s]+/u)).filter((word) => word.length >= 2).slice(0, 6);
     return <><section className="os-rail-card growth-rail-card"><header><span><TrendingUp size={16}/>最近 7 天</span><time>{stats.average || "--"}</time></header><div className="growth-sparkline">{points.map((point, index) => <i key={index} style={{ height: `${Math.max(8, point)}%` }}/>)}</div><small>情绪平均值 · {stats.recent.length} 次记录</small></section><section className="os-rail-card growth-rail-card"><header><span><Sparkles size={16}/>本周关键词</span></header><div className="growth-keywords">{keywords.length ? keywords.map((word, index) => <span key={`${word}-${index}`}>{word}</span>) : <small>记录后会提取情绪线索</small>}</div></section><RailCTA icon={BrainCircuit} title="看看我最近的状态" description="前往 AI Core 梳理情绪轨迹" onClick={() => onNavigate("ai")}/></>;
   }
   if (active === "learning") {
@@ -123,11 +121,6 @@ function GrowthRailContent({ active, moods, learning, english, fitness, goals, o
     const latest = learning[0];
     const blocks = latest ? learningBlocksForEntry(latest) : [];
     return <><section className="os-rail-card growth-rail-card"><header><span><BookOpen size={16}/>学习信息</span></header><div className="growth-rail-metrics"><span>本周时间<b>{stats.weeklyMinutes} min</b></span><span>最近分类<b>{stats.latestTopic}</b></span><span>图片<b>{blocks.filter((item) => item.type === "image").length}</b></span><span>附件 / 链接<b>{blocks.filter((item) => item.type === "file" || item.type === "link").length}</b></span></div></section><section className="os-rail-card growth-rail-card"><header><span><Sparkles size={16}/>最近主题</span></header><div className="growth-rail-topics">{learning.slice(0, 4).map((entry) => <span key={entry.id}><i>{entry.category}</i>{entry.title}</span>)}{!learning.length && <small>暂无学习主题</small>}</div></section><RailCTA icon={BrainCircuit} title="让 AI 总结这篇日志" description="前往 AI Core 连接学习上下文" onClick={() => onNavigate("ai")}/></>;
-  }
-  if (active === "english") {
-    const weekly = englishMinutesThisWeek(english);
-    const recent = [...english].sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
-    return <><section className="os-rail-card growth-rail-card"><header><span><Languages size={16}/>Streak Calendar</span><time>{englishStreak(english)} 天</time></header><div className="growth-streak-grid">{Array.from({ length: 28 }, (_, index) => <i key={index} className={english.some((entry) => entry.date === new Date(Date.now() - (27 - index) * 86400000).toISOString().slice(0, 10) && entry.checkedIn) ? "active" : ""}/>)}</div></section><section className="os-rail-card growth-rail-card"><header><span><Target size={16}/>本周目标</span><time>{weekly}/{goals.weeklyEnglishMinutes}</time></header><div className="growth-progress"><i style={{ width: `${Math.min(100, weekly / goals.weeklyEnglishMinutes * 100)}%` }}/></div><small>保持稳定输入，不追求一次完成</small></section><section className="os-rail-card growth-rail-card"><header><span><BarChart3 size={16}/>最近时长</span></header><div className="growth-mini-bars">{recent.map((entry) => <i key={entry.id} style={{ height: `${Math.max(8, Math.min(100, entry.duration / 60 * 100))}%` }} title={`${entry.duration} 分钟`}/>)}</div></section></>;
   }
   const stats = fitnessGrowthStats(fitness);
   const types = Array.from(new Set(stats.weekly.map((entry) => entry.title))).slice(0, 4);

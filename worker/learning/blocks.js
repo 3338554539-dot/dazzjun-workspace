@@ -30,7 +30,7 @@ export function normalizeLearningEntries(value) {
     id: String(item?.id || crypto.randomUUID()),
     date: String(item?.date || new Date().toISOString().slice(0, 10)),
     title: String(item?.title || "未命名学习记录"),
-    category: ["书籍", "课程", "技能", "文章"].includes(item?.category) ? item.category : "书籍",
+    category: ["书籍", "课程", "技能", "文章", "英语"].includes(item?.category) ? item.category : "书籍",
     content: String(item?.content ?? item?.learningContent ?? ""),
     duration: Math.max(0, Number(item?.duration) || 0),
     notes: String(item?.notes ?? item?.learningNote ?? ""),

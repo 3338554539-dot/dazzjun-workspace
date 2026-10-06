@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import type { PageKey } from "../Shell";
 import type { WorkspaceNavigate } from "./WorkspaceNavigation";
+import { todayISO, yesterdayISO } from "../../services/date";
 
 export function MobileNavigation({ active, onNavigate, onAccount, onSettings }: { active: PageKey; onNavigate: WorkspaceNavigate; onAccount: () => void; onSettings: () => void }) {
   const [menu, setMenu] = useState<"record" | "more" | null>(null);
@@ -12,9 +13,9 @@ export function MobileNavigation({ active, onNavigate, onAccount, onSettings }: 
       <AnimatePresence>{menu && <motion.div className="os-mobile-sheet" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 18 }}>
         <span>{menu === "record" ? "快速记录" : "更多空间"}</span>
         <div>{menu === "record" ? <>
-          <button onClick={() => { onNavigate("mood", { mode: "new" }); setMenu(null); }}>心情</button>
+          <button onClick={() => { onNavigate("mood", { mode: "new", date: todayISO() }); setMenu(null); }}>记录今日心情</button>
+          <button onClick={() => { onNavigate("mood", { mode: "new", date: yesterdayISO() }); setMenu(null); }}>记录昨日心情</button>
           <button onClick={() => { onNavigate("learning", { mode: "new" }); setMenu(null); }}>学习</button>
-          <button onClick={() => { onNavigate("english", { mode: "new" }); setMenu(null); }}>英语</button>
           <button onClick={() => { onNavigate("fitness", { mode: "new" }); setMenu(null); }}>健身</button>
           <button onClick={() => { onNavigate("inspiration", { mode: "capture" }); setMenu(null); }}>灵感</button>
         </> : <>

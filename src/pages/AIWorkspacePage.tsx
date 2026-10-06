@@ -184,7 +184,7 @@ export function AIWorkspacePage() {
       <aside className="ai-insight-column">
         <Panel className="daily-ai-insight">
           <PanelTitle icon={WandSparkles} action={<time>{new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(new Date())}</time>}>Intelligence Report</PanelTitle>
-          {!insight && !insightLoading && <div className="daily-insight-empty"><span><Activity size={24}/></span><strong>从今天的记录中看见自己</strong><p>由当前账户的任务、心情、学习、英语、健身和灵感记录生成。</p><button disabled={!contextAuthorized || !status?.configured} onClick={generateDailyInsight}><Sparkles size={14}/>{contextAuthorized ? "生成今日洞察" : "需要开启个人上下文"}</button></div>}
+          {!insight && !insightLoading && <div className="daily-insight-empty"><span><Activity size={24}/></span><strong>从今天的记录中看见自己</strong><p>由当前账户的任务、心情、学习、健身和灵感记录生成。</p><button disabled={!contextAuthorized || !status?.configured} onClick={generateDailyInsight}><Sparkles size={14}/>{contextAuthorized ? "生成今日洞察" : "需要开启个人上下文"}</button></div>}
           {insightLoading && <div className="daily-insight-loading"><span><BrainCircuit size={24}/></span><strong>正在连接今日轨迹</strong><small>整理六类近期记录...</small></div>}
           {insight && <motion.div className="daily-insight-result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <section><i/><div><strong>今日总结</strong><p>{insight.summary || "本次没有生成总结。"}</p></div></section>

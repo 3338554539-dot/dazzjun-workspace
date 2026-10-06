@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { AppShell, type PageKey } from "./components/Shell";
 import type { WorkspaceNavigate, WorkspaceNavigationOptions } from "./components/workspace/WorkspaceNavigation";
-import { AIWorkspacePage, EnglishPage, FitnessPage, InspirationPage, LearningPage, MoodPage, OverviewPage, TodoPage, WeeklyPage } from "./pages";
+import { AIWorkspacePage, FitnessPage, InspirationPage, LearningPage, MoodPage, OverviewPage, TodoPage, WeeklyPage } from "./pages";
 import { useWorkspaceStore } from "./store/workspaceStore";
 
 const pages: Record<PageKey, React.ComponentType> = {
@@ -10,7 +10,6 @@ const pages: Record<PageKey, React.ComponentType> = {
   todo: TodoPage,
   mood: MoodPage,
   learning: LearningPage,
-  english: EnglishPage,
   fitness: FitnessPage,
   weekly: WeeklyPage,
   inspiration: InspirationPage,
@@ -22,7 +21,6 @@ const pagePaths: Record<PageKey, string> = {
   todo: "/todo",
   mood: "/mood",
   learning: "/learning",
-  english: "/english",
   fitness: "/fitness",
   weekly: "/weekly",
   inspiration: "/inspiration",
@@ -30,7 +28,11 @@ const pagePaths: Record<PageKey, string> = {
 };
 
 const pageFromLocation = (): PageKey => {
-  const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  let normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (normalizedPath === "/english") {
+    window.history.replaceState({}, "", "/learning?retired=english");
+    normalizedPath = "/learning";
+  }
   const page = (Object.entries(pagePaths).find(([, path]) => path === normalizedPath)?.[0] as PageKey | undefined) ?? "overview";
   console.info(`[ROUTER]\naction: resolve\npathname: ${window.location.pathname}\npage: ${page}\nloginRedirect: false\ntime: ${new Date().toISOString()}`);
   return page;
@@ -49,16 +51,23 @@ const pathWithOptions = (page: PageKey, options?: WorkspaceNavigationOptions) =>
 export function App() {
   const [active, setActive] = useState<PageKey>(pageFromLocation);
   const [currentLocation, setCurrentLocation] = useState(locationKey);
+  const [englishRetiredNotice, setEnglishRetiredNotice] = useState(() => new URLSearchParams(window.location.search).get("retired") === "english");
   const recordUsage = useWorkspaceStore((state) => state.recordUsage);
   const touchStart = useRef<number | null>(null);
   const Page = pages[active];
-  const swipePages: PageKey[] = ["overview", "todo", "mood", "learning", "english", "fitness", "weekly", "inspiration"];
+  const swipePages: PageKey[] = ["overview", "todo", "mood", "learning", "fitness", "weekly", "inspiration"];
   useEffect(() => { recordUsage(active); }, [active, recordUsage]);
+  useEffect(() => {
+    if (!englishRetiredNotice) return;
+    const timer = window.setTimeout(() => setEnglishRetiredNotice(false), 3600);
+    return () => window.clearTimeout(timer);
+  }, [englishRetiredNotice]);
   useEffect(() => {
     const restorePage = () => {
       console.info(`[ROUTER]\naction: popstate\npathname: ${window.location.pathname}\nloginRedirect: false\ntime: ${new Date().toISOString()}`);
       setActive(pageFromLocation());
       setCurrentLocation(locationKey());
+      setEnglishRetiredNotice(new URLSearchParams(window.location.search).get("retired") === "english");
     };
     window.addEventListener("popstate", restorePage);
     return () => window.removeEventListener("popstate", restorePage);
@@ -80,7 +89,7 @@ export function App() {
     navigate(swipePages[next]);
   };
 
-  return (
+  return <>
     <AppShell active={active} onNavigate={navigate} locationKey={currentLocation}>
       <AnimatePresence mode="wait">
         <motion.div key={currentLocation} className="page-transition" onTouchStart={(event) => { touchStart.current = event.touches[0].clientX; }} onTouchEnd={(event) => handleSwipe(event.changedTouches[0].clientX)} initial={{ opacity: 0, y: 8, filter: "blur(7px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0, y: -6, filter: "blur(5px)" }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
@@ -88,5 +97,6 @@ export function App() {
         </motion.div>
       </AnimatePresence>
     </AppShell>
-  );
+    <AnimatePresence>{englishRetiredNotice && <motion.div className="data-notice" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>英语学习已合并到学习日志</motion.div>}</AnimatePresence>
+  </>;
 }

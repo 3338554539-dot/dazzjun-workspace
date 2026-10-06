@@ -1,7 +1,7 @@
 export type TodoCategory = "工作" | "学习" | "生活";
 export type Priority = "高" | "中" | "低";
 export type MoodKind = "低落" | "疲惫" | "平静" | "开心" | "兴奋";
-export type LearningCategory = "书籍" | "课程" | "技能" | "文章";
+export type LearningCategory = "书籍" | "课程" | "技能" | "文章" | "英语";
 export type EnglishCategory = "单词" | "听力" | "阅读" | "口语";
 export type InspirationPlatform = "douyin" | "xiaohongshu" | "web";
 export type InspirationPortal = "抖音" | "小红书";
@@ -34,6 +34,7 @@ export interface MoodEntry {
   score: number;
   story: string;
   note: string;
+  createdAt?: string;
   updatedAt: string;
 }
 

@@ -7,7 +7,6 @@ const pageTitles: Record<PageKey, { title: string; eyebrow: string }> = {
   todo: { title: "To Do List", eyebrow: "TASK RHYTHM" },
   mood: { title: "心情日记", eyebrow: "MOOD JOURNAL" },
   learning: { title: "学习日志", eyebrow: "LEARNING SPACE" },
-  english: { title: "英语学习", eyebrow: "ENGLISH PRACTICE" },
   fitness: { title: "健身锻炼", eyebrow: "FITNESS TRACKER" },
   weekly: { title: "周复盘", eyebrow: "WEEKLY REVIEW" },
   inspiration: { title: "灵感库", eyebrow: "INSPIRATION LIBRARY" },

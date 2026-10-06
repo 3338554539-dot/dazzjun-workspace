@@ -23,6 +23,8 @@
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:workspace-v9-growth": "node --test tests/workspace-v9-growth.test.mjs",
     "test:workspace-v9-navigation": "node --test tests/workspace-v9-navigation.test.mjs",
+    "test:mood-yesterday": "node --test tests/mood-yesterday.test.mjs",
+    "test:english-retirement": "node --test tests/english-retirement.test.mjs",
     "test:public-readiness": "node --test tests/public-readiness-security.test.mjs"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, BrainCircuit, CheckCircle2, Dumbbell, Heart, Languages, Lightbulb, PenLine, Plus, Send, Sparkles, SquareCheckBig, X } from "lucide-react";
+import { ArrowRight, BookOpen, BrainCircuit, CheckCircle2, Dumbbell, Heart, Lightbulb, PenLine, Plus, Send, Sparkles, SquareCheckBig, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { useAuth } from "../auth";
@@ -7,7 +7,7 @@ import type { PageKey } from "../components/Shell";
 import { WorkspaceEmptyState } from "../components/workspace/GrowthUI";
 import { useWorkspaceNavigation, type WorkspaceNavigationOptions } from "../components/workspace/WorkspaceNavigation";
 import { useWorkspaceStats } from "../hooks/useWorkspaceStats";
-import { getGreeting, isBetween, todayISO } from "../services/date";
+import { getGreeting, isBetween, todayISO, yesterdayISO } from "../services/date";
 import { shouldSubmitOnEnter } from "../services/ime";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import { useWorkspaceTheme } from "../theme";
@@ -24,6 +24,7 @@ export function OverviewPage() {
   const [assistantDraft, setAssistantDraft] = useState("");
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const today = todayISO();
+  const yesterday = yesterdayISO(today);
   const todayLabel = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date());
   const metrics = [
     { label: "今日任务", value: `${stats.todayTodo.done}/${stats.todayTodo.total}`, meta: `${stats.todayTodo.progress}% 完成`, icon: SquareCheckBig, tone: "violet", page: "todo" as const, options: { filter: "today" } },
@@ -35,18 +36,17 @@ export function OverviewPage() {
   ];
   const recentRecords = useMemo(() => [
     ...workspace.learning.map((item) => ({ id: item.id, title: item.title, module: "学习", date: item.createdAt, page: "learning" as const, options: { recordId: item.id } })),
-    ...workspace.moods.map((item) => ({ id: item.id, title: `${item.mood} · ${item.story || item.note || "心情记录"}`, module: "心情", date: item.updatedAt, page: "mood" as const, options: { recordId: item.id, date: item.date } })),
+    ...workspace.moods.map((item) => ({ id: item.id, title: `${item.mood} · ${item.story || item.note || "心情记录"}`, module: "心情", date: item.date, page: "mood" as const, options: { recordId: item.id, date: item.date } })),
     ...workspace.fitness.map((item) => ({ id: item.id, title: item.title, module: "健身", date: item.createdAt, page: "fitness" as const, options: { recordId: item.id } })),
     ...workspace.inspirations.map((item) => ({ id: item.id, title: item.title, module: "灵感", date: item.createdAt, page: "inspiration" as const, options: { recordId: item.id } })),
-    ...workspace.english.map((item) => ({ id: item.id, title: item.categories.join(" · ") || "英语练习", module: "英语", date: item.updatedAt, page: "english" as const, options: { recordId: item.id } })),
-  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5), [workspace.learning, workspace.moods, workspace.fitness, workspace.inspirations, workspace.english]);
+  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5), [workspace.learning, workspace.moods, workspace.fitness, workspace.inspirations]);
   const weeklyFocus = workspace.todos.filter((item) => !item.done && isBetween(item.scheduleDate, stats.currentWeek.start, stats.currentWeek.end)).sort((a, b) => Number(b.priority === "高") - Number(a.priority === "高") || a.scheduleDate.localeCompare(b.scheduleDate)).slice(0, 3);
   const quickActions: QuickAction[] = [
     { label: "新任务", detail: "安排今天要推进的事", icon: SquareCheckBig, page: "todo", options: { filter: "today", mode: "new" } },
-    { label: "记录心情", detail: "留住此刻状态", icon: Heart, page: "mood", options: { mode: "new", date: today } },
+    { label: "记录今日心情", detail: "留住此刻状态", icon: Heart, page: "mood", options: { mode: "new", date: today } },
+    { label: "记录昨日心情", detail: "补记昨天的感受", icon: Heart, page: "mood", options: { mode: "new", date: yesterday } },
     { label: "学习日志", detail: "沉淀知识与附件", icon: BookOpen, page: "learning", options: { mode: "new" } },
     { label: "收藏灵感", detail: "快速保存一个想法", icon: PenLine, page: "inspiration", options: { mode: "capture" } },
-    { label: "英语打卡", detail: "延续学习节奏", icon: Languages, page: "english", options: { mode: "new" } },
     { label: "记录运动", detail: "开始一次新训练", icon: Dumbbell, page: "fitness", options: { mode: "new" } },
   ];
   const openQuickAction = (action: QuickAction) => { setQuickCreateOpen(false); navigate(action.page, action.options); };

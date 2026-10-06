@@ -11,7 +11,7 @@ import { canSaveLearning, saveLearningEntryConsistently } from "../services/lear
 import { useWorkspaceStore } from "../store/workspaceStore";
 import { useWorkspaceNavigation } from "../components/workspace/WorkspaceNavigation";
 
-const categories: LearningCategory[] = ["书籍", "课程", "技能", "文章"];
+const categories: LearningCategory[] = ["书籍", "课程", "技能", "文章", "英语"];
 const imageAccept = ".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp";
 const fileAccept = ".pdf,.docx,.xlsx,.pptx,.zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,application/x-zip-compressed";
 const newTextBlock = (): LearningBlock => ({ id: crypto.randomUUID(), type: "text", content: "" });

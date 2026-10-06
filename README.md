@@ -38,9 +38,8 @@ The preview images use a fictional QA account and synthetic records. They do not
 
 - **Personal Dashboard** - a single view of today's tasks and current growth signals.
 - **Todo System** - planned execution dates, deadlines, priorities, categories, and daily progress.
-- **Mood Journal** - private mood, story, and reflection records.
-- **Learning Vault** - structured learning logs with optional rich-media blocks.
-- **English Practice** - check-ins, duration, vocabulary, exercises, and notes.
+- **Mood Journal** - private mood, story, and reflection records with support for today's entry and yesterday backfill.
+- **Learning Vault** - structured learning logs for product, SQL, AI, English, and other topics, with optional rich-media blocks.
 - **Fitness Log** - training sessions, duration, calories, and weekly rhythm.
 - **Inspiration Library** - unified capture for Douyin, Xiaohongshu, and regular web links.
 - **Weekly Review** - weekly goals, progress, reflection, and follow-up actions.

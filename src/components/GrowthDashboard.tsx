@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { Activity, BookOpen, Bookmark, BrainCircuit, Clock3, Dumbbell, Flame, Languages, MoonStar, PenLine, Sparkles } from "lucide-react";
+import { Activity, BookOpen, Bookmark, BrainCircuit, Clock3, Dumbbell, Flame, MoonStar, PenLine, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import type { HabitId } from "../data/types";
 import { isHabitComplete } from "../services/analytics";
@@ -23,7 +23,6 @@ export function GrowthRings({ values }: { values: GrowthValues }) {
 
 const habits: Array<{ id: HabitId; label: string; icon: typeof BookOpen }> = [
   { id: "reading", label: "阅读", icon: BookOpen },
-  { id: "english", label: "英语", icon: Languages },
   { id: "fitness", label: "健身", icon: Dumbbell },
   { id: "writing", label: "写作", icon: PenLine },
   { id: "sleep", label: "早睡", icon: MoonStar },
@@ -40,7 +39,9 @@ export function HabitTracker({ streaks }: { streaks: Record<HabitId, number> }) 
   const dates = Array.from({ length: 28 }, (_, index) => daysAgoISO(27 - index));
   const sources = { todos, learning, english, fitness, inspirationNotes, habitCompletions };
 
-  return <Panel className="habit-tracker-panel"><PanelTitle icon={Activity} action={<span className="habit-live"><Flame size={13}/> English Day {streaks.english}</span>}>Habit Tracker</PanelTitle><div className="habit-calendar" onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}><div className="habit-calendar-head"><span>DAILY RHYTHM</span>{dates.map((date, index) => <time key={date}>{index % 7 === 6 || index === 27 ? new Date(`${date}T12:00:00`).getDate() : ""}</time>)}</div>{habits.map((habit) => { const Icon = habit.icon; return <div className="habit-row" key={habit.id}><span><Icon size={14}/>{habit.label}<b>{streaks[habit.id]}d</b></span>{dates.map((date) => { const complete = isHabitComplete(habit.id, date, sources); return <button key={date} className={complete ? "complete" : ""} aria-label={`${date} ${habit.label}${complete ? "已完成" : "未完成"}`} title={`${date} · ${habit.label}`} onClick={() => setHabitCompletion(habit.id, date, !complete)}/>; })}</div>; })}</div><footer><span><i/>未完成</span><span><i className="complete"/>已完成</span><small>点击任意节点补记习惯 · 模块完成会自动点亮</small></footer></Panel>;
+  const visibleBestStreak = Math.max(streaks.reading, streaks.fitness, streaks.writing, streaks.sleep);
+
+  return <Panel className="habit-tracker-panel"><PanelTitle icon={Activity} action={<span className="habit-live"><Flame size={13}/> Rhythm {visibleBestStreak}d</span>}>Habit Tracker</PanelTitle><div className="habit-calendar" onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}><div className="habit-calendar-head"><span>DAILY RHYTHM</span>{dates.map((date, index) => <time key={date}>{index % 7 === 6 || index === 27 ? new Date(`${date}T12:00:00`).getDate() : ""}</time>)}</div>{habits.map((habit) => { const Icon = habit.icon; return <div className="habit-row" key={habit.id}><span><Icon size={14}/>{habit.label}<b>{streaks[habit.id]}d</b></span>{dates.map((date) => { const complete = isHabitComplete(habit.id, date, sources); return <button key={date} className={complete ? "complete" : ""} aria-label={`${date} ${habit.label}${complete ? "已完成" : "未完成"}`} title={`${date} · ${habit.label}`} onClick={() => setHabitCompletion(habit.id, date, !complete)}/>; })}</div>; })}</div><footer><span><i/>未完成</span><span><i className="complete"/>已完成</span><small>点击任意节点补记习惯 · 模块完成会自动点亮</small></footer></Panel>;
 }
 
 export function YearOverview({ data }: { data: YearValues }) {

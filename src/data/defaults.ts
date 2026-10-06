@@ -1,4 +1,4 @@
-import type { InspirationCategory, InspirationCoverType, InspirationItem, InspirationPlatform, LearningBlock, LearningEntry, TodoItem, WorkspaceData } from "./types";
+import type { InspirationCategory, InspirationCoverType, InspirationItem, InspirationPlatform, LearningBlock, LearningEntry, MoodEntry, TodoItem, WorkspaceData } from "./types";
 
 export const defaultInspirationCategories: InspirationCategory[] = [];
 export const legacyPresetCategoryIds = new Set(["design", "ai", "photography", "fashion", "music", "business"]);
@@ -31,6 +31,7 @@ export const defaultWorkspaceData: WorkspaceData = {
 type LegacyInspiration = Partial<Omit<InspirationItem, "platform">> & { platform?: InspirationPlatform | "抖音" | "小红书"; title?: string; source?: string; category?: string; tags?: string[] };
 type LegacyTodo = Partial<TodoItem> & { dueAt?: string };
 type LegacyLearning = Partial<LearningEntry> & { learningContent?: string; learningNote?: string; reflection?: string };
+type LegacyMood = Partial<MoodEntry>;
 const inspirationCoverTypes = new Set<InspirationCoverType>(["video_first_frame", "video_poster", "first_image", "og_image", "main_image", "fallback"]);
 const isDefaultInspirationCover = (value: string) => /^\/assets\/inspiration-(?:ribbons|sea)\.png$/u.test(value);
 
@@ -83,13 +84,27 @@ function normalizeLearning(raw: LegacyLearning): LearningEntry {
     id: String(raw.id || crypto.randomUUID()),
     date: String(raw.date || new Date().toISOString().slice(0, 10)),
     title: String(raw.title || "未命名学习记录"),
-    category: raw.category === "课程" || raw.category === "技能" || raw.category === "文章" ? raw.category : "书籍",
+    category: raw.category === "课程" || raw.category === "技能" || raw.category === "文章" || raw.category === "英语" ? raw.category : "书籍",
     content: String(raw.content ?? raw.learningContent ?? ""),
     duration: Math.max(0, Number(raw.duration) || 0),
     notes: String(raw.notes ?? raw.learningNote ?? ""),
     gain: String(raw.gain ?? raw.reflection ?? ""),
     learningBlocks: normalizeLearningBlocksForWorkspace(raw.learningBlocks),
     createdAt: String(raw.createdAt || new Date().toISOString()),
+  };
+}
+
+function normalizeMood(raw: LegacyMood): MoodEntry {
+  const timestamp = String(raw.createdAt || raw.updatedAt || new Date().toISOString());
+  return {
+    id: String(raw.id || crypto.randomUUID()),
+    date: String(raw.date || timestamp.slice(0, 10)),
+    mood: raw.mood === "低落" || raw.mood === "疲惫" || raw.mood === "开心" || raw.mood === "兴奋" ? raw.mood : "平静",
+    score: Math.max(0, Math.min(100, Number(raw.score) || 68)),
+    story: String(raw.story || ""),
+    note: String(raw.note || ""),
+    createdAt: timestamp,
+    updatedAt: String(raw.updatedAt || timestamp),
   };
 }
 
@@ -136,7 +151,9 @@ export function normalizeWorkspaceData(input: Partial<WorkspaceData>): Workspace
     ...structuredClone(defaultWorkspaceData),
     ...input,
     todos: (Array.isArray(input.todos) ? input.todos : []).map((item) => normalizeTodo(item as LegacyTodo)),
+    moods: (Array.isArray(input.moods) ? input.moods : []).map((item) => normalizeMood(item as LegacyMood)),
     learning: (Array.isArray(input.learning) ? input.learning : []).map((item) => normalizeLearning(item as LegacyLearning)),
+    english: Array.isArray(input.english) ? input.english : [],
     inspirations,
     inspirationCategories: categories,
     inspirationNotes: input.inspirationNotes ?? [],

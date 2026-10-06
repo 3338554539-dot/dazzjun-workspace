@@ -16,7 +16,8 @@ test("dashboard metrics pass actionable module context", async () => {
 
 test("recent records and weekly focus navigate to exact records", async () => {
   const page = await read("src/pages/OverviewPage.tsx");
-  for (const module of ["learning", "mood", "fitness", "inspiration", "english"]) assert.match(page, new RegExp(`page: "${module}" as const`));
+  for (const module of ["learning", "mood", "fitness", "inspiration"]) assert.match(page, new RegExp(`page: "${module}" as const`));
+  assert.doesNotMatch(page, /page: "english" as const/);
   assert.match(page, /navigate\(item\.page, item\.options\)/);
   assert.match(page, /navigate\("todo", \{ filter: "week", taskId: item\.id \}\)/);
 });
@@ -29,14 +30,14 @@ test("quick capture and AI bridge carry creation content", async () => {
 });
 
 test("target pages consume navigation filters, record ids and create modes", async () => {
-  const [todo, mood, learning, english, fitness, inspiration, weekly, ai] = await Promise.all([
-    read("src/pages/TodoPage.tsx"), read("src/pages/MoodPage.tsx"), read("src/pages/LearningPage.tsx"), read("src/pages/EnglishPage.tsx"),
+  const [todo, mood, learning, fitness, inspiration, weekly, ai] = await Promise.all([
+    read("src/pages/TodoPage.tsx"), read("src/pages/MoodPage.tsx"), read("src/pages/LearningPage.tsx"),
     read("src/pages/FitnessPage.tsx"), read("src/pages/InspirationPage.tsx"), read("src/pages/WeeklyPage.tsx"), read("src/pages/AIWorkspacePage.tsx"),
   ]);
   assert.match(todo, /params\.get\("taskId"\)/); assert.match(todo, /params\.get\("date"\)/); assert.match(todo, /data-task-id/);
-  assert.match(mood, /params\.get\("recordId"\)/); assert.match(mood, /params\.get\("mode"\) === "new"/);
+  assert.match(mood, /params\.get\("recordId"\)/); assert.match(mood, /params\.get\("date"\)/);
   assert.match(learning, /params\.get\("recordId"\)/); assert.match(learning, /requestedFilter/);
-  assert.match(english, /params\.get\("recordId"\)/); assert.match(fitness, /params\.get\("filter"\) === "week"/);
+  assert.match(fitness, /params\.get\("filter"\) === "week"/);
   assert.match(inspiration, /params\.get\("mode"\) === "capture"/); assert.match(weekly, /params\.get\("week"\)/);
   assert.match(ai, /incomingPrompt/); assert.match(ai, /sendMessage\(incomingPrompt\)/);
 });

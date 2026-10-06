@@ -55,8 +55,15 @@ test("AI Core path is restored directly from the current location", async () => 
 
 test("workspace module paths survive direct refreshes", async () => {
   const app = await readSource("src/App.tsx");
-  for (const path of ["/todo", "/mood", "/learning", "/english", "/fitness", "/weekly", "/inspiration", "/ai-core"]) {
+  for (const path of ["/todo", "/mood", "/learning", "/fitness", "/weekly", "/inspiration", "/ai-core"]) {
     assert.ok(app.includes(`"${path}"`), `missing direct route ${path}`);
   }
   assert.match(app, /pagePaths\[page\]/);
+});
+
+test("retired English bookmark is restored into Learning without a blank page", async () => {
+  const app = await readSource("src/App.tsx");
+  assert.match(app, /normalizedPath === "\/english"/);
+  assert.match(app, /replaceState\(\{\}, "", "\/learning\?retired=english"\)/);
+  assert.match(app, /英语学习已合并到学习日志/);
 });
